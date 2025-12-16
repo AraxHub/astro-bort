@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: astro-bot-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: astro-bot
+      # PGDATA используется для принудительной инициализации при смене пароля
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - astro-bot-network
+    # Если нужно сбросить пароль, раскомментируй следующую строку:
+    # command: postgres -c password_encryption=scram-sha-256
+
+volumes:
+  postgres_data:
+
+networks:
+  astro-bot-network:
+    driver: bridge
+
