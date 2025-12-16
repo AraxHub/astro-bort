@@ -28,7 +28,7 @@ func (c *HealthCheckController) RegisterRoutes(r *gin.Engine) {
 func (c *HealthCheckController) health(ctx *gin.Context) {
 	ctx.JSON(200, gin.H{
 		"status":  "ok",
-		"service": "hub-service",
+		"service": "astro-bot",
 	})
 }
 
