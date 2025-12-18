@@ -3,15 +3,17 @@ package app
 import (
 	server "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
+	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/pkg/logger"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
 )
 
 type Config struct {
-	Postgres *pg.Config     `envconfig:"POSTGRES"`
-	Log      *logger.Config `envconfig:"LOG"`
-	Server   *server.Config `envconfig:"APISERVER"`
+	Postgres *pg.Config       `envconfig:"POSTGRES"`
+	Log      *logger.Config   `envconfig:"LOG"`
+	Server   *server.Config   `envconfig:"APISERVER"`
+	Telegram *telegram.Config `envconfig:"TELEGRAM"`
 }
 
 func NewEnvConfig(envPrefix string) (*Config, error) {

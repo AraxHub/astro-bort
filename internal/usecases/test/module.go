@@ -1,6 +1,7 @@
 package testService
 
 import (
+	"context"
 	"log/slog"
 
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
@@ -19,8 +20,8 @@ func New(testRepo ports.ITestRepo, log *slog.Logger) *Service {
 	}
 }
 
-func (s *Service) SaveTest(test *domain.Test) error {
-	if err := s.TestRepo.Create(test); err != nil {
+func (s *Service) SaveTest(ctx context.Context, test *domain.Test) error {
+	if err := s.TestRepo.Create(ctx, test); err != nil {
 		return err
 	}
 

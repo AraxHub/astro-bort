@@ -43,7 +43,8 @@ func (a *App) Run(ctx context.Context) error {
 		return fmt.Errorf("failed to init postgres: %w", err)
 	}
 
-	testRepo := testRepo.New(db, a.Log)
+	persistenceLayer := pg.NewDB(db)
+	testRepo := testRepo.New(persistenceLayer, a.Log)
 	testService := testService.New(testRepo, a.Log)
 	testController := testController.New(testService, a.Log)
 	healthCheck := healthcheckController.New(db, a.Log)
@@ -92,7 +93,6 @@ func (a *App) Run(ctx context.Context) error {
 	return nil
 }
 
-// initPostgres инициализирует подключение к PostgreSQL
 func (a *App) initPostgres() (*sqlx.DB, error) {
 	db, err := a.Cfg.Postgres.NewConnection()
 	if err != nil {

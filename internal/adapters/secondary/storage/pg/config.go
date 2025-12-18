@@ -27,14 +27,6 @@ type Config struct {
 	StatementTimeoutMillis int    `envconfig:"STATEMENT_TIMEOUT" default:"60000"`
 }
 
-type DB struct {
-	Db *sqlx.DB
-}
-
-func NewPgPersistence(db *sqlx.DB) *DB {
-	return &DB{Db: db}
-}
-
 func (c *Config) toPgConnection() string {
 	return fmt.Sprintf("host=%s port=%s user=%s dbname=%s password=%s sslmode=%s",
 		c.Host,
@@ -44,20 +36,6 @@ func (c *Config) toPgConnection() string {
 		c.Password,
 		c.SSLMode,
 	)
-}
-
-// NewDB создает новое подключение к базе данных используя строку подключения (legacy метод)
-func NewDbConn(connStr string) (*DB, error) {
-	db, err := sqlx.Connect("postgres", connStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to database: %w", err)
-	}
-
-	if err := db.Ping(); err != nil {
-		return nil, fmt.Errorf("failed to ping database: %w", err)
-	}
-
-	return &DB{Db: db}, nil
 }
 
 // NewConnection создает новое подключение к базе данных с настройками пула и statement_timeout
@@ -92,8 +70,4 @@ func (c *Config) NewConnection() (*sqlx.DB, error) {
 	}
 
 	return db, err
-}
-
-func (d *DB) Close() error {
-	return d.Db.Close()
 }
