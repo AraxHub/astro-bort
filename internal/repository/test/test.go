@@ -20,7 +20,6 @@ type Repository struct {
 }
 
 // New создаёт новый репозиторий для работы с тестовой таблицей
-// Принимает persistence.Persistence для соблюдения инверсии зависимостей
 func New(db persistence.Persistence, log *slog.Logger) ports.ITestRepo {
 	return &Repository{
 		db:  db,
@@ -107,22 +106,11 @@ func (r *Repository) DeleteById(ctx context.Context, id int64) error {
 }
 
 // BeginTx явно начинает транзакцию
-// Использование:
-//
-//	tx, err := repo.BeginTx(ctx)
-//	defer tx.Rollback() // на случай ошибки
-//	repo.CreateTx(ctx, tx, test)
-//	tx.Commit()
 func (r *Repository) BeginTx(ctx context.Context) (persistence.Transaction, error) {
 	return r.db.BeginTx(ctx)
 }
 
 // WithTransaction выполняет функцию в транзакции с автоматическим commit/rollback
-// Использование:
-//
-//	repo.WithTransaction(ctx, func(ctx context.Context, tx persistence.Transaction) error {
-//	    return repo.CreateTx(ctx, tx, test)
-//	})
 func (r *Repository) WithTransaction(ctx context.Context, fn func(context.Context, persistence.Transaction) error) error {
 	return r.db.WithTransaction(ctx, fn)
 }

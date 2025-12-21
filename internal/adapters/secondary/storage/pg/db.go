@@ -13,10 +13,6 @@ type DB struct {
 	Db *sqlx.DB
 }
 
-// Проверка, что DB реализует persistence.Persistence
-var _ persistence.Persistence = (*DB)(nil)
-
-// NewDB создаёт персистентный слой из sqlx.DB
 func NewDB(db *sqlx.DB) *DB {
 	return &DB{Db: db}
 }

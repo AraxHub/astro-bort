@@ -1,12 +1,12 @@
 package testController
 
 import (
+	"github.com/admin/tg-bots/astro-bot/internal/usecases/test"
 	"log/slog"
 	"net/http"
 
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
 
-	testService "github.com/admin/tg-bots/astro-bot/internal/usecases/test"
 	"github.com/gin-gonic/gin"
 )
 
@@ -44,7 +44,7 @@ func (c *Controller) handleTest(ctx *gin.Context) {
 		Filed2: req.Field2,
 	}
 
-	err = c.TestService.SaveTest(test)
+	err = c.TestService.SaveTest(ctx.Request.Context(), test)
 	if err != nil {
 		c.Log.Error(err.Error())
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

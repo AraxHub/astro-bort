@@ -27,8 +27,8 @@ func (c *HealthCheckController) RegisterRoutes(r *gin.Engine) {
 // health базовая проверка (всегда возвращает 200)
 func (c *HealthCheckController) health(ctx *gin.Context) {
 	ctx.JSON(200, gin.H{
-		"status":  "ok",
-		"service": "astro-bot",
+		"status":   "ok",
+		"usecases": "astro-bot",
 	})
 }
 

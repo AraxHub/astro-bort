@@ -14,11 +14,9 @@ type ITestRepo interface {
 	Update(ctx context.Context, test *domain.Test) error
 	DeleteById(ctx context.Context, id int64) error
 
-	// Транзакции
 	BeginTx(ctx context.Context) (persistence.Transaction, error)
 	WithTransaction(ctx context.Context, fn func(context.Context, persistence.Transaction) error) error
 
-	// Методы для работы в транзакции
 	CreateTx(ctx context.Context, tx persistence.Transaction, test *domain.Test) error
 	UpdateTx(ctx context.Context, tx persistence.Transaction, test *domain.Test) error
 	DeleteTx(ctx context.Context, tx persistence.Transaction, id int64) error
