@@ -37,6 +37,16 @@ func (s *Service) HandleMessage(ctx context.Context, botID domain.BotId, message
 		return nil
 	}
 
+	// Игнорируем сообщения из групп (только приватные чаты)
+	if message.Chat != nil && message.Chat.Type != "private" {
+		s.Log.Debug("ignoring message from group/chat",
+			"update_id", updateID,
+			"chat_type", message.Chat.Type,
+			"chat_id", message.Chat.ID,
+		)
+		return nil
+	}
+
 	// Определяем botType из botID через маппинг
 	botType, err := s.GetBotType(botID)
 	if err != nil {
