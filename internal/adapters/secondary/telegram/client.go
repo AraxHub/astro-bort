@@ -45,14 +45,17 @@ type SendMessageRequest struct {
 	ReplyMarkup map[string]interface{} `json:"reply_markup,omitempty"`
 }
 
+// ChatInfo информация о чате
+type ChatInfo struct {
+	ID int64 `json:"id"`
+}
+
 // SendMessageResult результат отправки сообщения
 type SendMessageResult struct {
-	MessageID int64 `json:"message_id"`
-	Chat      struct {
-		ID int64 `json:"id"`
-	} `json:"chat"`
-	Text string `json:"text"`
-	Date int64  `json:"date"`
+	MessageID int64    `json:"message_id"`
+	Chat      ChatInfo `json:"chat"`
+	Text      string   `json:"text"`
+	Date      int64    `json:"date"`
 }
 
 // SendMessageResponse ответ от Telegram API
@@ -255,14 +258,17 @@ func (c *Client) SetMyCommands(ctx context.Context, commands []BotCommand) error
 	return nil
 }
 
+// SetWebhookRequest запрос на установку webhook
+type SetWebhookRequest struct {
+	URL         string `json:"url"`
+	SecretToken string `json:"secret_token,omitempty"`
+}
+
 // SetWebhook устанавливает webhook для бота
 // url - URL для получения обновлений
 // secretToken - секретный токен для валидации запросов (будет отправлен в заголовке X-Telegram-Bot-Api-Secret-Token)
 func (c *Client) SetWebhook(ctx context.Context, url string, secretToken string) error {
-	reqBody := struct {
-		URL         string `json:"url"`
-		SecretToken string `json:"secret_token,omitempty"`
-	}{
+	reqBody := SetWebhookRequest{
 		URL:         url,
 		SecretToken: secretToken,
 	}
