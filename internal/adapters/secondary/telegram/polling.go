@@ -14,11 +14,12 @@ import (
 )
 
 // UpdateHandler функция для обработки обновлений от Telegram
-type UpdateHandler func(ctx context.Context, botID string, update *domain.Update) error
+type UpdateHandler func(ctx context.Context, id domain.BotId, update *domain.Update) error
 
 // Poller реализует long polling для получения обновлений от Telegram
 type Poller struct {
 	client       *Client
+	botID        domain.BotId
 	config       *Config
 	handler      UpdateHandler
 	lastUpdateID int64
@@ -26,7 +27,7 @@ type Poller struct {
 	httpClient   *http.Client // отдельный HTTP клиент с увеличенным таймаутом для polling
 }
 
-func NewPoller(client *Client, config *Config, handler UpdateHandler, log *slog.Logger) *Poller {
+func NewPoller(client *Client, botID domain.BotId, config *Config, handler UpdateHandler, log *slog.Logger) *Poller {
 	pollingTimeout := config.PollingTimeout
 	if pollingTimeout <= 0 {
 		pollingTimeout = 30
@@ -36,6 +37,7 @@ func NewPoller(client *Client, config *Config, handler UpdateHandler, log *slog.
 
 	return &Poller{
 		client:       client,
+		botID:        botID,
 		config:       config,
 		handler:      handler,
 		lastUpdateID: 0,
@@ -60,23 +62,23 @@ type GetUpdatesResponse struct {
 }
 
 // Start запускает long polling в отдельной горутине
-func (p *Poller) Start(ctx context.Context, botID string) error {
+func (p *Poller) Start(ctx context.Context) error {
 	p.log.Info("starting telegram polling",
-		"bot_id", botID,
+		"bot_id", p.botID,
 		"timeout", p.config.PollingTimeout,
 	)
 
 	for {
 		select {
 		case <-ctx.Done():
-			p.log.Info("polling stopped", "bot_id", botID)
+			p.log.Info("polling stopped", "bot_id", p.botID)
 			return ctx.Err()
 		default:
 			updates, err := p.getUpdates(ctx)
 			if err != nil {
 				p.log.Error("failed to get updates",
 					"error", err,
-					"bot_id", botID,
+					"bot_id", p.botID,
 				)
 				// Ждём перед повтором
 				time.Sleep(5 * time.Second)
@@ -96,11 +98,11 @@ func (p *Poller) Start(ctx context.Context, botID string) error {
 				}
 
 				// Обрабатываем обновление через handler
-				if err := p.handler(ctx, botID, update); err != nil {
+				if err := p.handler(ctx, p.botID, update); err != nil {
 					p.log.Error("failed to handle update",
 						"error", err,
 						"update_id", update.UpdateID,
-						"bot_id", botID,
+						"bot_id", p.botID,
 					)
 					// Продолжаем обработку следующих обновлений
 				}

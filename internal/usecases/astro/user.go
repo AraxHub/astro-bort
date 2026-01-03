@@ -10,7 +10,7 @@ import (
 )
 
 // GetOrCreateUser получает пользователя по Telegram ID или создаёт нового
-func (s *Service) GetOrCreateUser(ctx context.Context, tgUser *domain.TelegramUser, chat *domain.Chat) (*domain.User, error) {
+func (s *Service) GetOrCreateUser(ctx context.Context, botID domain.BotId, tgUser *domain.TelegramUser, chat *domain.Chat) (*domain.User, error) {
 	// Пытаемся найти существующего пользователя
 	user, err := s.UserRepo.GetByTelegramID(ctx, tgUser.ID)
 	if err == nil && user != nil {

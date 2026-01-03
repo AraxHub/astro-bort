@@ -242,3 +242,65 @@ func (c *Client) SetMyCommands(ctx context.Context, commands []BotCommand) error
 	c.log.Info("bot commands registered successfully", "commands_count", len(commands))
 	return nil
 }
+
+// SetWebhook устанавливает webhook для бота
+// url - URL для получения обновлений
+// secretToken - секретный токен для валидации запросов (будет отправлен в заголовке X-Telegram-Bot-Api-Secret-Token)
+func (c *Client) SetWebhook(ctx context.Context, url string, secretToken string) error {
+	reqBody := struct {
+		URL         string `json:"url"`
+		SecretToken string `json:"secret_token,omitempty"`
+	}{
+		URL:         url,
+		SecretToken: secretToken,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	apiURL := c.baseURL + "/setWebhook"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	var apiResp APIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		c.log.Error("failed to unmarshal response",
+			"error", err,
+			"status_code", resp.StatusCode,
+			"body", string(body),
+		)
+		return fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if !apiResp.OK {
+		c.log.Error("telegram API returned error",
+			"error_code", apiResp.ErrorCode,
+			"description", apiResp.Description,
+			"status_code", resp.StatusCode,
+			"url", url,
+		)
+		return fmt.Errorf("telegram API error: %s (code: %d)", apiResp.Description, apiResp.ErrorCode)
+	}
+
+	c.log.Info("webhook set successfully",
+		"url", url,
+		"has_secret_token", secretToken != "",
+	)
+	return nil
+}

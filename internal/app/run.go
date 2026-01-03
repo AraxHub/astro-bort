@@ -1,0 +1,86 @@
+package app
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"time"
+
+	"golang.org/x/sync/errgroup"
+)
+
+func (a *App) runServices(ctx context.Context, deps *Dependencies) error {
+	g, gCtx := errgroup.WithContext(ctx)
+
+	g.Go(func() error {
+		a.Log.Info("starting http server",
+			"host", a.Cfg.Server.Host,
+			"port", a.Cfg.Server.Port)
+
+		err := deps.HTTPServer.ListenAndServe()
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("http server error: %w", err)
+		}
+		return nil
+	})
+
+	// Telegram Updates: либо Webhook (prod), либо Polling (local dev)
+	if a.Cfg.Telegram.UseWebhook {
+		a.Log.Info("telegram updates mode: webhook (production)",
+			"webhook_url", a.Cfg.Telegram.WebhookURL)
+	} else {
+		g.Go(func() error {
+			return a.runPolling(gCtx, deps)
+		})
+	}
+
+	// Graceful shutdown
+	g.Go(func() error {
+		<-gCtx.Done()
+		a.Log.Info("received shutdown signal")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := deps.HTTPServer.Shutdown(shutdownCtx); err != nil {
+			a.Log.Error("failed to shutdown http server", "error", err)
+		}
+
+		if err := deps.DB.Close(); err != nil {
+			a.Log.Error("failed to close database", "error", err)
+		}
+
+		a.Log.Info("application shutdown completed")
+		return nil
+	})
+
+	if err := g.Wait(); err != nil {
+		a.Log.Error("application error", "error", err)
+		return err
+	}
+
+	return nil
+}
+
+// runPolling запускает polling для локальной разработки
+func (a *App) runPolling(ctx context.Context, deps *Dependencies) error {
+	if deps.TelegramPoller == nil {
+		return fmt.Errorf("telegram poller is not initialized")
+	}
+
+	// Удаляем webhook перед запуском polling
+	deleteCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := deps.TelegramPoller.DeleteWebhook(deleteCtx); err != nil {
+		a.Log.Warn("failed to delete webhook, continuing anyway", "error", err)
+		// Ждём немного перед запуском polling, чтобы дать время на удаление webhook
+		time.Sleep(2 * time.Second)
+	} else {
+		a.Log.Info("webhook deleted successfully, starting polling")
+	}
+
+	// Запускаем polling (botID уже сохранён в Poller)
+	return deps.TelegramPoller.Start(ctx)
+}

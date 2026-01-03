@@ -30,7 +30,7 @@ type Message struct {
 	Entities  []Entity      `json:"entities,omitempty"` // сущности (команды, упоминания и т.д.)
 }
 
-// User - пользователя Telegram (не путать с domain.User)
+// User - пользователя Telegram (не domain.User)
 type TelegramUser struct {
 	ID           int64   `json:"id"`
 	IsBot        bool    `json:"is_bot"`
@@ -56,3 +56,24 @@ type Entity struct {
 	Offset int    `json:"offset"` // смещение в UTF-16 кодовых единицах
 	Length int    `json:"length"` // длина в UTF-16 кодовых единицах
 }
+
+type BotType string
+
+const (
+	BotTypeAstro BotType = "astro"
+)
+
+func (bt BotType) String() string {
+	return string(bt)
+}
+
+func (bt BotType) IsValid() bool {
+	switch bt {
+	case BotTypeAstro:
+		return true
+	default:
+		return false
+	}
+}
+
+type BotId string

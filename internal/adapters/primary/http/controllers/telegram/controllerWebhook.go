@@ -22,14 +22,26 @@ func New(TgService *telegramService.Service, log *slog.Logger) *Controller {
 }
 
 func (c *Controller) RegisterRoutes(router *gin.Engine) {
-	router.POST("/webhook/:bot_id", c.handleWebhook)
+	router.POST("/webhook/", c.handleWebhook)
 }
 
 func (c *Controller) handleWebhook(ctx *gin.Context) {
-	botID := ctx.Param("bot_id")
-	if botID == "" {
-		c.Log.Error("bot_id is required")
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "bot_id is required"})
+	secretToken := ctx.GetHeader("X-Telegram-Bot-Api-Secret-Token")
+	if secretToken == "" {
+		c.Log.Error("secret token is required")
+		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "secret token required"})
+		return
+	}
+
+	botID := domain.BotId(secretToken)
+
+	// Валидируем, что bot_id существует в конфигурации
+	if _, err := c.TgService.GetBotType(botID); err != nil {
+		c.Log.Warn("unknown bot_id in webhook",
+			"bot_id", botID,
+			"error", err,
+		)
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unknown bot_id"})
 		return
 	}
 

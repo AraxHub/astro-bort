@@ -141,13 +141,11 @@ func (r *Repository) Create(ctx context.Context, user *domain.User) error {
 	return nil
 }
 
-// GetByTelegramID получает пользователя по Telegram ID
+// GetByTelegramID получает пользователя по Telegram ID (без natal_chart для ленивой загрузки)
 func (r *Repository) GetByTelegramID(ctx context.Context, telegramID int64) (*domain.User, error) {
 	var user domain.User
-	// Используем явное приведение типа для JSONB, чтобы избежать проблем с маппингом
-	query := fmt.Sprintf(`SELECT %s, %s::text as natal_chart FROM %s WHERE %s = $1`,
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE %s = $1`,
 		r.allColumnsExceptNatalChart(),
-		r.columns.NatalChart,
 		r.columns.TableName,
 		r.columns.TelegramUserID)
 	r.Log.Debug("executing query", "query", query, "telegram_id", telegramID)
@@ -166,13 +164,12 @@ func (r *Repository) GetByTelegramID(ctx context.Context, telegramID int64) (*do
 	return &user, nil
 }
 
-// GetByID получает пользователя по ID
+// GetByID получает пользователя по ID (без natal_chart для ленивой загрузки)
 func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	var user domain.User
-	// Используем явное приведение типа для JSONB
-	query := fmt.Sprintf(`SELECT %s, %s::text as natal_chart FROM %s WHERE %s = $1`,
+	// Загружаем все колонки кроме natal_chart для оптимизации
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE %s = $1`,
 		r.allColumnsExceptNatalChart(),
-		r.columns.NatalChart,
 		r.columns.TableName,
 		r.columns.ID)
 	err := r.db.Get(ctx, &user, query, id)
@@ -195,7 +192,7 @@ func (r *Repository) Update(ctx context.Context, user *domain.User) error {
 	query := fmt.Sprintf(`UPDATE %s SET 
 		%s = $2, %s = $3, %s = $4, %s = $5, %s = $6, 
 		%s = $7, %s = $8, %s = $9, %s = $10, %s = $11, 
-		%s = $12, %s = $13, %s = $14, %s = $15
+		%s = $12, %s = $13, %s = $14
 		WHERE %s = $1`,
 		r.columns.TableName,
 		r.columns.TelegramUserID,
@@ -313,7 +310,7 @@ func (r *Repository) UpdateTx(ctx context.Context, tx persistence.Transaction, u
 	query := fmt.Sprintf(`UPDATE %s SET 
 		%s = $2, %s = $3, %s = $4, %s = $5, %s = $6, 
 		%s = $7, %s = $8, %s = $9, %s = $10, %s = $11, 
-		%s = $12, %s = $13, %s = $14, %s = $15
+		%s = $12, %s = $13, %s = $14
 		WHERE %s = $1`,
 		r.columns.TableName,
 		r.columns.TelegramUserID,
@@ -359,13 +356,39 @@ func (r *Repository) UpdateTx(ctx context.Context, tx persistence.Transaction, u
 	return nil
 }
 
-// GetByTelegramIDTx получает пользователя по Telegram ID в транзакции
+// GetNatalChart получает только натальную карту пользователя (ленивая загрузка)
+func (r *Repository) GetNatalChart(ctx context.Context, userID uuid.UUID) ([]byte, error) {
+	var natalChart sql.NullString
+	query := fmt.Sprintf(`SELECT COALESCE(%s::text, '') FROM %s WHERE %s = $1`,
+		r.columns.NatalChart,
+		r.columns.TableName,
+		r.columns.ID)
+	err := r.db.Get(ctx, &natalChart, query, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			r.Log.Warn("user not found for natal chart", "user_id", userID)
+			return nil, fmt.Errorf("user not found: %w", err)
+		}
+		r.Log.Error("failed to get natal chart",
+			"error", err,
+			"user_id", userID)
+		return nil, fmt.Errorf("failed to get natal chart: %w", err)
+	}
+	if !natalChart.Valid || natalChart.String == "" {
+		r.Log.Debug("natal chart is empty or null", "user_id", userID)
+		return nil, nil
+	}
+	result := []byte(natalChart.String)
+	r.Log.Debug("natal chart retrieved successfully", "user_id", userID, "size", len(result))
+	return result, nil
+}
+
+// GetByTelegramIDTx получает пользователя по Telegram ID в транзакции (без natal_chart для ленивой загрузки)
 func (r *Repository) GetByTelegramIDTx(ctx context.Context, tx persistence.Transaction, telegramID int64) (*domain.User, error) {
 	var user domain.User
-	// Используем явное приведение типа для JSONB
-	query := fmt.Sprintf(`SELECT %s, %s::text as natal_chart FROM %s WHERE %s = $1`,
+	// Загружаем все колонки кроме natal_chart для оптимизации
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE %s = $1`,
 		r.allColumnsExceptNatalChart(),
-		r.columns.NatalChart,
 		r.columns.TableName,
 		r.columns.TelegramUserID)
 	err := tx.Get(ctx, &user, query, telegramID)

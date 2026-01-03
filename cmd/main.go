@@ -8,7 +8,7 @@ import (
 	"github.com/admin/tg-bots/astro-bot/internal/app"
 )
 
-const appName = "astro_bot"
+const appName = "tg_bots"
 
 func main() {
 	cfg, err := app.NewEnvConfig(appName)

@@ -19,6 +19,7 @@ type requestColumns struct {
 	TableName   string
 	ID          string
 	UserID      string
+	BotID       string
 	TGUpdateID  string
 	RequestText string
 	CreatedAt   string
@@ -36,6 +37,7 @@ func New(db persistence.Persistence, log *slog.Logger) ports.IRequestRepo {
 		TableName:   "requests",
 		ID:          "id",
 		UserID:      "user_id",
+		BotID:       "bot_id",
 		TGUpdateID:  "tg_update_id",
 		RequestText: "request_text",
 		CreatedAt:   "created_at",
@@ -49,9 +51,10 @@ func New(db persistence.Persistence, log *slog.Logger) ports.IRequestRepo {
 
 // allColumns возвращает строку со всеми колонками
 func (r *Repository) allColumns() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %s",
+	return fmt.Sprintf("%s, %s, %s, %s, %s, %s",
 		r.columns.ID,
 		r.columns.UserID,
+		r.columns.BotID,
 		r.columns.TGUpdateID,
 		r.columns.RequestText,
 		r.columns.CreatedAt)
@@ -59,12 +62,13 @@ func (r *Repository) allColumns() string {
 
 // Create создаёт новый запрос
 func (r *Repository) Create(ctx context.Context, request *domain.Request) error {
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5)`,
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6)`,
 		r.columns.TableName,
 		r.allColumns())
 	err := r.db.Exec(ctx, query,
 		request.ID,
 		request.UserID,
+		request.BotID,
 		request.TGUpdateID,
 		request.RequestText,
 		request.CreatedAt)
@@ -158,12 +162,13 @@ func (r *Repository) WithTransaction(ctx context.Context, fn func(context.Contex
 
 // CreateTx создаёт запрос в транзакции
 func (r *Repository) CreateTx(ctx context.Context, tx persistence.Transaction, request *domain.Request) error {
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5)`,
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6)`,
 		r.columns.TableName,
 		r.allColumns())
 	err := tx.Exec(ctx, query,
 		request.ID,
 		request.UserID,
+		request.BotID,
 		request.TGUpdateID,
 		request.RequestText,
 		request.CreatedAt)
@@ -223,4 +228,3 @@ func (r *Repository) GetByUpdateIDTx(ctx context.Context, tx persistence.Transac
 	r.Log.Debug("request retrieved in transaction", "tg_update_id", updateID, "request_id", request.ID)
 	return &request, nil
 }
-
