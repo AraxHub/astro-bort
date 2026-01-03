@@ -22,7 +22,7 @@ func New(TgService *telegramService.Service, log *slog.Logger) *Controller {
 }
 
 func (c *Controller) RegisterRoutes(router *gin.Engine) {
-	router.POST("/webhook/", c.handleWebhook)
+	router.POST("/webhook", c.handleWebhook)
 }
 
 func (c *Controller) handleWebhook(ctx *gin.Context) {
