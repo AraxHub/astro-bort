@@ -1,0 +1,31 @@
+All metrics below to be measured against the users of one bot. 
+Meaning automatically filtering by bot_id.
+How can we make snapshots of the data for each given day? And we need to be able to see this data for each user
+
+Awareness
+-> (tracked by tg) # of impressions on the ads we place (out of scope)
+
+Acquisition
+-> # people who opened the dialogue (is even trackable?) (maybe opening the bot creates a database record? idk) 
+-> # people who pressed the start button (pressed start button boolean)
+
+Activation
+-> # people who filled in the date of birth + city (boolean)
+-> # questions asked (user message counter that starts after the flow)
+-> time from start clicked to first question
+-> time from start clicked to paywall
+
+Retention
+-> # people who use the bot daily--> daily meaning sending at least 1 message every three days
+  ->  
+  -> last user message sent
+  -> last bot message sent--> we can catch errors if last user message > last bot message
+  -> is user considered active (see point 1) on D1, D7, D30 (aka did user use the bot in the last three days)
+
+
+Revenue 
+-> # of paying users (is user on subscription or if charging by messages, did the user purchase any credits in the past month)
+
+
+Referral 
+-> # of users referred (include referred boolean field, referred from pointing to user id) and referral counter (how many invited to the bot. Count from activation).
