@@ -189,12 +189,24 @@ type BotCommand struct {
 	Description string `json:"description"`
 }
 
+// BotCommandScope представляет область действия команд
+type BotCommandScope struct {
+	Type string `json:"type"`
+}
+
+// SetMyCommandsRequest запрос на установку команд бота
+type SetMyCommandsRequest struct {
+	Commands []BotCommand    `json:"commands"`
+	Scope    BotCommandScope `json:"scope"`
+}
+
 // SetMyCommands регистрирует команды бота в меню
 func (c *Client) SetMyCommands(ctx context.Context, commands []BotCommand) error {
-	reqBody := struct {
-		Commands []BotCommand `json:"commands"`
-	}{
+	reqBody := SetMyCommandsRequest{
 		Commands: commands,
+		Scope: BotCommandScope{
+			Type: "all_private_chats", // Команды только для приватных чатов
+		},
 	}
 
 	jsonData, err := json.Marshal(reqBody)
