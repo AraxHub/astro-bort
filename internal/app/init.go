@@ -106,14 +106,20 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	)
 
 	// Инициализируем webhook или polling
+	a.Log.Info("telegram configuration",
+		"use_webhook", a.Cfg.Telegram.IsWebhookEnabled(),
+		"webhook_url", a.Cfg.Telegram.WebhookURL,
+	)
+
 	var poller *tgAdapter.Poller
-	if a.Cfg.Telegram.UseWebhook {
+	if a.Cfg.Telegram.IsWebhookEnabled() {
 		// Устанавливаем webhook для каждого бота при старте
 		if err := a.setupWebhooks(ctx, telegramClients); err != nil {
 			return nil, fmt.Errorf("failed to setup webhooks: %w", err)
 		}
 	} else {
 		// Polling для локальной разработки
+		a.Log.Warn("polling mode enabled - this should only be used for local development")
 		poller = a.initPolling(tgService, telegramClients)
 	}
 

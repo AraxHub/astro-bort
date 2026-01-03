@@ -26,7 +26,7 @@ func (a *App) runServices(ctx context.Context, deps *Dependencies) error {
 	})
 
 	// Telegram Updates: либо Webhook (prod), либо Polling (local dev)
-	if a.Cfg.Telegram.UseWebhook {
+	if a.Cfg.Telegram.IsWebhookEnabled() {
 		a.Log.Info("telegram updates mode: webhook (production)",
 			"webhook_url", a.Cfg.Telegram.WebhookURL)
 	} else {
