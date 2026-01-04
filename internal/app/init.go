@@ -9,6 +9,7 @@ import (
 	healthcheckController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/healthcheck"
 	telegramController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/telegram"
 	testController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/test"
+	astroApiAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
 	tgAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
@@ -17,6 +18,7 @@ import (
 	statusRepo "github.com/admin/tg-bots/astro-bot/internal/repository/status"
 	testRepo "github.com/admin/tg-bots/astro-bot/internal/repository/test"
 	userRepo "github.com/admin/tg-bots/astro-bot/internal/repository/user"
+	astroApiService "github.com/admin/tg-bots/astro-bot/internal/services/astroApi"
 	telegramService "github.com/admin/tg-bots/astro-bot/internal/services/telegram"
 	astroUsecase "github.com/admin/tg-bots/astro-bot/internal/usecases/astro"
 	testService "github.com/admin/tg-bots/astro-bot/internal/usecases/test"
@@ -76,12 +78,24 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		a.Log,
 	)
 
-	// Создаём UseCase с Telegram Service
+	// Инициализируем астро-API клиент и сервис
+	if a.Cfg.AstroAPI == nil {
+		return nil, fmt.Errorf("astro API configuration is required: set TG_BOTS_ASTRO_API_* environment variables")
+	}
+
+	astroAPIClient := astroApiAdapter.NewClient(
+		a.Cfg.AstroAPI,
+		a.Log,
+	)
+	astroAPIService := astroApiService.New(astroAPIClient)
+
+	// Создаём UseCase с Telegram Service и Astro API Service
 	astroUseCase := astroUsecase.New(
 		userRepo,
 		requestRepo,
 		statusRepo,
 		tgService,
+		astroAPIService,
 		a.Log,
 	)
 

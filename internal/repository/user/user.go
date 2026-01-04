@@ -357,7 +357,7 @@ func (r *Repository) UpdateTx(ctx context.Context, tx persistence.Transaction, u
 }
 
 // GetNatalChart получает только натальную карту пользователя (ленивая загрузка)
-func (r *Repository) GetNatalChart(ctx context.Context, userID uuid.UUID) ([]byte, error) {
+func (r *Repository) GetNatalChart(ctx context.Context, userID uuid.UUID) (domain.NatalChart, error) {
 	var natalChart sql.NullString
 	query := fmt.Sprintf(`SELECT COALESCE(%s::text, '') FROM %s WHERE %s = $1`,
 		r.columns.NatalChart,
@@ -378,7 +378,7 @@ func (r *Repository) GetNatalChart(ctx context.Context, userID uuid.UUID) ([]byt
 		r.Log.Debug("natal chart is empty or null", "user_id", userID)
 		return nil, nil
 	}
-	result := []byte(natalChart.String)
+	result := domain.NatalChart(natalChart.String)
 	r.Log.Debug("natal chart retrieved successfully", "user_id", userID, "size", len(result))
 	return result, nil
 }

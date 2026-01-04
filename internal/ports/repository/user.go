@@ -13,7 +13,7 @@ type IUserRepo interface {
 	Create(ctx context.Context, user *domain.User) error
 	GetByTelegramID(ctx context.Context, telegramID int64) (*domain.User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
-	GetNatalChart(ctx context.Context, userID uuid.UUID) ([]byte, error)
+	GetNatalChart(ctx context.Context, userID uuid.UUID) (domain.NatalChart, error)
 	Update(ctx context.Context, user *domain.User) error
 	UpdateLastSeen(ctx context.Context, userID uuid.UUID) error
 

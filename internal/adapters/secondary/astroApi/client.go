@@ -1,0 +1,169 @@
+package astroApi
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"path"
+	"strings"
+	"time"
+)
+
+const (
+	GetNatalChart  = "charts/natal"
+	GetPositions   = "data/positions"
+	GetNatalReport = "analysis/natal-report"
+)
+
+// Client - клиент для работы с астрологическим API
+type Client struct {
+	cfg        *Config
+	HTTPClient *http.Client
+	Log        *slog.Logger
+}
+
+// NewClient создаёт новый клиент для работы с астро-API
+func NewClient(cfg *Config, log *slog.Logger) *Client {
+	transport := &http.Transport{}
+
+	if cfg.ShouldSkipSSL() {
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
+
+	return &Client{
+		cfg: cfg,
+		HTTPClient: &http.Client{
+			Transport: transport,
+			Timeout:   30 * time.Second,
+		},
+		Log: log,
+	}
+}
+
+// buildURL собирает полный URL из BaseURL, ApiVersion и endpoint
+func (c *Client) buildURL(endpoint string) string {
+	baseURL := strings.TrimSuffix(c.cfg.BaseURL, "/")
+	return baseURL + "/" + path.Join(c.cfg.ApiVersion, endpoint)
+}
+
+// CalculateNatalChart рассчитывает натальную карту через API
+func (c *Client) CalculateNatalChart(ctx context.Context, req NatalChartRequest) (*NatalChartResponse, error) {
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка сериализации запроса: %w", err)
+	}
+
+	url := c.buildURL(GetNatalChart)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("ошибка создания запроса: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка чтения ответа: %w", err)
+	}
+
+	rawJSON := string(body)
+
+	// Проверяем HTTP статус код
+	if resp.StatusCode != http.StatusOK {
+		c.Log.Error("astro API returned non-200 status",
+			"status_code", resp.StatusCode,
+			"body", rawJSON,
+		)
+		return nil, fmt.Errorf("astro API returned error: HTTP %d, body: %s", resp.StatusCode, rawJSON)
+	}
+
+	var chartResp NatalChartResponse
+	if err := json.Unmarshal(body, &chartResp); err != nil {
+		c.Log.Error("failed to unmarshal astro API response",
+			"error", err,
+			"status_code", resp.StatusCode,
+			"body", rawJSON,
+		)
+		return nil, fmt.Errorf("ошибка парсинга ответа: %w. Тело ответа: %s", err, rawJSON)
+	}
+
+	chartResp.RawJSON = rawJSON
+
+	return &chartResp, nil
+}
+
+// GetNatalReport получает натальный отчёт через API
+func (c *Client) GetNatalReport(ctx context.Context, req NatalChartRequest) ([]byte, error) {
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка сериализации запроса: %w", err)
+	}
+
+	url := c.buildURL(GetNatalReport)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("ошибка создания запроса: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка чтения ответа: %w", err)
+	}
+
+	return body, nil
+}
+
+// GetPositions получает позиции планет через новый API
+func (c *Client) GetPositions(ctx context.Context, req PositionsRequest) (*PositionsResponse, error) {
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка сериализации запроса: %w", err)
+	}
+
+	url := c.buildURL(GetPositions)
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("ошибка создания запроса: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка выполнения запроса: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("ошибка чтения ответа: %w", err)
+	}
+
+	// Сохраняем оригинальный JSON ответ
+	rawJSON := string(body)
+
+	return &PositionsResponse{
+		RawJSON: rawJSON,
+	}, nil
+}

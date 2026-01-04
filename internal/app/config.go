@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	server "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http"
+	astroApi "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
@@ -17,6 +18,7 @@ type Config struct {
 	Log      *logger.Config   `envconfig:"LOG"`
 	Server   *server.Config   `envconfig:"APISERVER"`
 	Telegram *telegram.Config `envconfig:"TELEGRAM"`
+	AstroAPI *astroApi.Config `envconfig:"ASTRO_API"`
 	Bots     BotsConfig       `envconfig:"BOTS"`
 }
 

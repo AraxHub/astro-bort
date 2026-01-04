@@ -19,10 +19,6 @@ func (s *Service) HandleUpdate(ctx context.Context, botID domain.BotId, update *
 		return s.HandleMessage(ctx, botID, update.Message, update.UpdateID)
 	}
 
-	// Handle_edited_message
-	// Handle_callback_query
-	//...
-
 	return nil
 }
 
@@ -37,9 +33,8 @@ func (s *Service) HandleMessage(ctx context.Context, botID domain.BotId, message
 		return nil
 	}
 
-	// Игнорируем сообщения из групп (только приватные чаты)
 	if message.Chat != nil && message.Chat.Type != "private" {
-		s.Log.Debug("ignoring message from group/chat",
+		s.Log.Warn("ignoring message from group/chat",
 			"update_id", updateID,
 			"chat_type", message.Chat.Type,
 			"chat_id", message.Chat.ID,

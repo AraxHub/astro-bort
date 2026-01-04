@@ -14,12 +14,18 @@ func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User)
 		return fmt.Errorf("birth date is not set")
 	}
 
-	// TODO: реализовать запрос в астро-API
-	// Пока заглушка
-	natalChartData := []byte(`{"placeholder": "natal chart data"}`)
+	if user.BirthPlace == nil || *user.BirthPlace == "" {
+		return fmt.Errorf("birth place is not set")
+	}
+
+	// Получаем натальную карту из астро-API
+	natalChart, err := s.AstroAPIService.CalculateNatalChart(ctx, *user.BirthDateTime, *user.BirthPlace)
+	if err != nil {
+		return fmt.Errorf("failed to calculate natal chart: %w", err)
+	}
 
 	now := time.Now()
-	user.NatalChart = natalChartData
+	user.NatalChart = natalChart
 	user.NatalChartFetchedAt = &now
 	user.UpdatedAt = now
 
@@ -30,6 +36,8 @@ func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User)
 	s.Log.Info("natal chart saved",
 		"user_id", user.ID,
 		"birth_date", user.BirthDateTime.Format("02.01.2006"),
+		"birth_place", *user.BirthPlace,
+		"chart_size", len(natalChart),
 	)
 
 	return nil

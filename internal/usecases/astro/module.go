@@ -13,6 +13,7 @@ type Service struct {
 	RequestRepo     repository.IRequestRepo
 	StatusRepo      repository.IStatusRepo
 	TelegramService service.ITelegramService
+	AstroAPIService service.IAstroAPIService
 	Log             *slog.Logger
 }
 
@@ -22,6 +23,7 @@ func New(
 	requestRepo repository.IRequestRepo,
 	statusRepo repository.IStatusRepo,
 	telegramService service.ITelegramService,
+	astroAPIService service.IAstroAPIService,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
@@ -29,6 +31,7 @@ func New(
 		RequestRepo:     requestRepo,
 		StatusRepo:      statusRepo,
 		TelegramService: telegramService,
+		AstroAPIService: astroAPIService,
 		Log:             log,
 	}
 }

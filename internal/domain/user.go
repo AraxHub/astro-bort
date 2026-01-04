@@ -17,7 +17,7 @@ type User struct {
 	BirthPlace              *string    `json:"birth_place,omitempty" db:"birth_place"`
 	BirthDataSetAt          *time.Time `json:"birth_data_set_at,omitempty" db:"birth_data_set_at"`
 	BirthDataCanChangeUntil *time.Time `json:"birth_data_can_change_until,omitempty" db:"birth_data_can_change_until"`
-	NatalChart              []byte     `json:"natal_chart,omitempty" db:"natal_chart"` // JSONB хранится как []byte
+	NatalChart              NatalChart `json:"natal_chart,omitempty" db:"natal_chart"` // JSONB хранится как NatalChart
 	NatalChartFetchedAt     *time.Time `json:"natal_chart_fetched_at,omitempty" db:"natal_chart_fetched_at"`
 	CreatedAt               time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt               time.Time  `json:"updated_at" db:"updated_at"`
