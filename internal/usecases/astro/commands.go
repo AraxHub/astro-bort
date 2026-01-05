@@ -12,7 +12,7 @@ import (
 func (s *Service) HandleCommand(ctx context.Context, botID domain.BotId, user *domain.User, command string, updateID int64) error {
 	switch command {
 	case "start":
-		return s.HandleStart(ctx, botID, user, updateID)
+		return s.HandleStart(ctx, botID, user)
 	case "help":
 		return s.HandleHelp(ctx, botID, user)
 	case "my_info":
@@ -24,7 +24,7 @@ func (s *Service) HandleCommand(ctx context.Context, botID domain.BotId, user *d
 	}
 }
 
-func (s *Service) HandleStart(ctx context.Context, botID domain.BotId, user *domain.User, updateID int64) error {
+func (s *Service) HandleStart(ctx context.Context, botID domain.BotId, user *domain.User) error {
 	if user.BirthDateTime == nil {
 		message := "🐱 Привет! Я Кита, твоя астрологиня ✨\n\n" +
 			"Я помогу тебе разобраться в твоей натальной карте и ответить на вопросы о жизни, отношениях, карьере и многом другом.\n\n" +

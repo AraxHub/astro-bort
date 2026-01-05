@@ -9,10 +9,14 @@ import (
 	healthcheckController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/healthcheck"
 	telegramController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/telegram"
 	testController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/test"
+	kafkaConsumerAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/kafka"
+	kafkaHandlers "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/kafka/handlers"
 	astroApiAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
+	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
 	tgAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
+	"github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
 	requestRepo "github.com/admin/tg-bots/astro-bot/internal/repository/request"
 	statusRepo "github.com/admin/tg-bots/astro-bot/internal/repository/status"
@@ -31,6 +35,8 @@ type Dependencies struct {
 	TelegramService *telegramService.Service
 	TelegramClients map[domain.BotId]*tgAdapter.Client
 	TelegramPoller  *tgAdapter.Poller
+	KafkaProducers  map[string]*kafkaAdapter.Producer
+	KafkaConsumers  map[string]*kafkaConsumerAdapter.Consumer
 }
 
 func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
@@ -75,6 +81,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		botIDToType,
 		make(map[domain.BotType]service.IBotService), // botServices будет заполнен после создания UseCase
 		telegramClients,
+		requestRepo, // для получения request по ID в HandleRAGResponse
 		a.Log,
 	)
 
@@ -89,13 +96,35 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	)
 	astroAPIService := astroApiService.New(astroAPIClient)
 
-	// Создаём UseCase с Telegram Service и Astro API Service
+	// Инициализируем Kafka producers
+	kafkaProducers := make(map[string]*kafkaAdapter.Producer)
+	var ragProducer *kafkaAdapter.Producer
+	for _, kafkaCfg := range a.Cfg.Kafka.List {
+		if kafkaCfg.Config.Topic != "" && kafkaCfg.Config.ConsumerGroup == "" {
+			// Это producer (есть topic, но нет consumer group)
+			prod, err := kafkaAdapter.NewProducer(kafkaCfg.Config, a.Log)
+			if err != nil {
+				a.Log.Warn("failed to create kafka producer",
+					"error", err,
+					"name", kafkaCfg.Name,
+				)
+				continue
+			}
+			kafkaProducers[kafkaCfg.Name] = prod
+			if kafkaCfg.Name == "rag_requests" {
+				ragProducer = prod
+			}
+		}
+	}
+
+	// Создаём UseCase с Telegram Service, Astro API Service и Kafka Producer
 	astroUseCase := astroUsecase.New(
 		userRepo,
 		requestRepo,
 		statusRepo,
 		tgService,
 		astroAPIService,
+		ragProducer, // может быть nil, если не настроен
 		a.Log,
 	)
 
@@ -137,12 +166,38 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		poller = a.initPolling(tgService, telegramClients)
 	}
 
+	// Инициализируем Kafka consumers
+	kafkaConsumers := make(map[string]*kafkaConsumerAdapter.Consumer)
+	for _, kafkaCfg := range a.Cfg.Kafka.List {
+		if kafkaCfg.Config.ConsumerGroup != "" {
+			// Это consumer (есть consumer group)
+			handler := a.createHandlerForTopic(kafkaCfg.Name, tgService)
+			if handler == nil {
+				a.Log.Warn("no handler for kafka topic, skipping consumer",
+					"name", kafkaCfg.Name,
+				)
+				continue
+			}
+			consumer, err := kafkaConsumerAdapter.NewConsumer(kafkaCfg.Config, handler, a.Log)
+			if err != nil {
+				a.Log.Warn("failed to create kafka consumer",
+					"error", err,
+					"name", kafkaCfg.Name,
+				)
+				continue
+			}
+			kafkaConsumers[kafkaCfg.Name] = consumer
+		}
+	}
+
 	return &Dependencies{
 		DB:              db,
 		HTTPServer:      httpServer,
 		TelegramService: tgService,
 		TelegramClients: telegramClients,
 		TelegramPoller:  poller,
+		KafkaProducers:  kafkaProducers,
+		KafkaConsumers:  kafkaConsumers,
 	}, nil
 }
 
@@ -220,4 +275,20 @@ func (a *App) initPostgres() (*sqlx.DB, error) {
 	}
 
 	return db, nil
+}
+
+// createHandlerForTopic создаёт handler для указанного топика
+func (a *App) createHandlerForTopic(
+	topicName string,
+	tgService *telegramService.Service,
+) kafka.MessageHandler {
+	switch topicName {
+	case "rag_responses":
+		return kafkaHandlers.NewRAGResponseHandler(tgService, a.Log)
+	default:
+		a.Log.Warn("unknown kafka topic, using default handler",
+			"topic", topicName,
+		)
+		return nil
+	}
 }

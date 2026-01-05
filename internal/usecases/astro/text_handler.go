@@ -291,17 +291,32 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 			"user_id", user.ID,
 			"request_id", request.ID,
 		)
-		// Продолжаем без natal_chart или возвращаем ошибку - зависит от требований
-		// Пока логируем и продолжаем
+		return s.sendMessage(ctx, botID, user.TelegramChatID,
+			"❌ Ошибка при получении натальной карты\nПопробуй позже или используй /start")
 	}
 
-	// TODO: отправить в Kafka для RAG (с natal_chart)
-	s.Log.Info("request created",
-		"request_id", request.ID,
-		"user_id", user.ID,
-		"text_length", len(text),
-		"natal_chart_size", len(natalChart),
-	)
+	// Отправляем в Kafka для RAG
+	if s.KafkaProducer != nil {
+		if err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.RequestText, natalChart); err != nil {
+			s.Log.Error("failed to send request to kafka",
+				"error", err,
+				"request_id", request.ID,
+				"user_id", user.ID,
+			)
+			return s.sendMessage(ctx, botID, user.TelegramChatID,
+				"❌ Ошибка при отправке запроса\nПопробуй позже")
+		}
+		s.Log.Info("request sent to kafka",
+			"request_id", request.ID,
+			"user_id", user.ID,
+			"text_length", len(text),
+			"natal_chart_size", len(natalChart),
+		)
+	} else {
+		s.Log.Warn("kafka producer not configured, skipping RAG request",
+			"request_id", request.ID,
+		)
+	}
 
 	return s.sendMessage(ctx, botID, user.TelegramChatID,
 		"✅ Запрос получен\nОбрабатываю...")

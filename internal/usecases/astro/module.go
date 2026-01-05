@@ -3,6 +3,7 @@ package astro
 import (
 	"log/slog"
 
+	"github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/repository"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
 )
@@ -14,6 +15,7 @@ type Service struct {
 	StatusRepo      repository.IStatusRepo
 	TelegramService service.ITelegramService
 	AstroAPIService service.IAstroAPIService
+	KafkaProducer   kafka.IKafkaProducer // может быть nil
 	Log             *slog.Logger
 }
 
@@ -24,6 +26,7 @@ func New(
 	statusRepo repository.IStatusRepo,
 	telegramService service.ITelegramService,
 	astroAPIService service.IAstroAPIService,
+	kafkaProducer kafka.IKafkaProducer, // может быть nil
 	log *slog.Logger,
 ) *Service {
 	return &Service{
@@ -32,6 +35,7 @@ func New(
 		StatusRepo:      statusRepo,
 		TelegramService: telegramService,
 		AstroAPIService: astroAPIService,
+		KafkaProducer:   kafkaProducer,
 		Log:             log,
 	}
 }

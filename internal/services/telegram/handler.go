@@ -7,6 +7,7 @@ import (
 
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
+	"github.com/google/uuid"
 )
 
 // HandleUpdate Основной метод для обработки всех типов обновлений
@@ -98,4 +99,42 @@ func ParseCommand(text string) string {
 
 func IsCommand(text string) bool {
 	return len(text) > 0 && text[0] == '/'
+}
+
+// HandleRAGResponse обрабатывает ответ от RAG - роутинг в usecase
+func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, responseText string) error {
+	// Получаем request по request_id
+	request, err := s.RequestRepo.GetByID(ctx, requestID)
+	if err != nil {
+		s.Log.Error("failed to get request by id",
+			"error", err,
+			"request_id", requestID,
+		)
+		return fmt.Errorf("failed to get request: %w", err)
+	}
+
+	// Определяем botType из botID через маппинг
+	botType, err := s.GetBotType(request.BotID)
+	if err != nil {
+		s.Log.Error("failed to get bot_type for bot_id",
+			"error", err,
+			"bot_id", request.BotID,
+			"request_id", requestID,
+		)
+		return fmt.Errorf("failed to get bot_type: %w", err)
+	}
+
+	// Роутим к нужному UseCase
+	botService, ok := s.BotTypeToUsecase[botType]
+	if !ok {
+		s.Log.Error("unknown bot_type",
+			"bot_type", botType,
+			"bot_id", request.BotID,
+			"request_id", requestID,
+		)
+		return fmt.Errorf("unknown bot_type: %s", botType)
+	}
+
+	// Вызываем HandleRAGResponse в UseCase
+	return botService.HandleRAGResponse(ctx, requestID, responseText)
 }

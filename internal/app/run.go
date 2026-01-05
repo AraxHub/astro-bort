@@ -35,6 +35,16 @@ func (a *App) runServices(ctx context.Context, deps *Dependencies) error {
 		})
 	}
 
+	// Запускаем все Kafka consumers
+	for name, consumer := range deps.KafkaConsumers {
+		name := name // для замыкания в goroutine
+		consumer := consumer
+		g.Go(func() error {
+			a.Log.Info("starting kafka consumer", "name", name)
+			return consumer.Start(gCtx)
+		})
+	}
+
 	// Graceful shutdown
 	g.Go(func() error {
 		<-gCtx.Done()
@@ -49,6 +59,20 @@ func (a *App) runServices(ctx context.Context, deps *Dependencies) error {
 
 		if err := deps.DB.Close(); err != nil {
 			a.Log.Error("failed to close database", "error", err)
+		}
+
+		// Закрываем Kafka producers
+		for name, producer := range deps.KafkaProducers {
+			if err := producer.Close(); err != nil {
+				a.Log.Error("failed to close kafka producer", "error", err, "name", name)
+			}
+		}
+
+		// Закрываем Kafka consumers
+		for name, consumer := range deps.KafkaConsumers {
+			if err := consumer.Close(); err != nil {
+				a.Log.Error("failed to close kafka consumer", "error", err, "name", name)
+			}
 		}
 
 		a.Log.Info("application shutdown completed")

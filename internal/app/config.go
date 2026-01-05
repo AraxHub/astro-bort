@@ -5,6 +5,7 @@ import (
 
 	server "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http"
 	astroApi "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
+	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
@@ -14,12 +15,13 @@ import (
 )
 
 type Config struct {
-	Postgres *pg.Config       `envconfig:"POSTGRES"`
-	Log      *logger.Config   `envconfig:"LOG"`
-	Server   *server.Config   `envconfig:"APISERVER"`
-	Telegram *telegram.Config `envconfig:"TELEGRAM"`
-	AstroAPI *astroApi.Config `envconfig:"ASTRO_API"`
-	Bots     BotsConfig       `envconfig:"BOTS"`
+	Postgres *pg.Config                `envconfig:"POSTGRES"`
+	Log      *logger.Config            `envconfig:"LOG"`
+	Server   *server.Config            `envconfig:"APISERVER"`
+	Telegram *telegram.Config          `envconfig:"TELEGRAM"`
+	AstroAPI *astroApi.Config          `envconfig:"ASTRO_API"`
+	Bots     BotsConfig                `envconfig:"BOTS"`
+	Kafka    kafkaAdapter.KafkaConfigs `envconfig:"KAFKA"`
 }
 
 // BotsConfig конфигурация ботов
@@ -54,6 +56,11 @@ func NewEnvConfig(envPrefix string) (*Config, error) {
 	// Загружаем ботов вручную (envconfig не умеет автоматически определять размер слайса)
 	if err := cfg.Bots.Load(envPrefix); err != nil {
 		return nil, fmt.Errorf("failed to load bots config: %w", err)
+	}
+
+	// Загружаем Kafka конфигурацию вручную
+	if err := cfg.Kafka.Load(envPrefix); err != nil {
+		return nil, fmt.Errorf("failed to load kafka config: %w", err)
 	}
 
 	return cfg, nil
