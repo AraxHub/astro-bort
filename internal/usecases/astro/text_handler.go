@@ -2,6 +2,7 @@ package astro
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -14,24 +15,21 @@ import (
 func (s *Service) HandleText(ctx context.Context, botID domain.BotId, user *domain.User, text string, updateID int64) error {
 	text = strings.TrimSpace(text)
 
-	// Проверяем, является ли это подтверждением сброса даты
 	if text == "ПОДТВЕРДИТЬ" {
 		return s.confirmResetBirthData(ctx, botID, user)
 	}
 
-	// Проверяем, является ли это датой рождения (формат ДД.ММ.ГГГГ)
 	if s.isBirthDateInput(text) {
 		return s.handleBirthDateInput(ctx, botID, user, text)
 	}
 
-	// Обычное текстовое сообщение - создаём запрос
 	return s.handleUserQuestion(ctx, botID, user, text, updateID)
 }
 
 // isBirthDateInput проверяет, является ли текст полным вводом даты рождения
 // Формат: ДД.ММ.ГГГГ чч:мм Город, КодСтраны или ДД.ММ.ГГГГ чч:мм Город
 func (s *Service) isBirthDateInput(text string) bool {
-	// Убираем обратные кавычки, если есть (code block)
+	// Убираем code block
 	text = strings.Trim(text, "`")
 	text = strings.TrimSpace(text)
 
@@ -248,12 +246,61 @@ func (s *Service) confirmResetBirthData(ctx context.Context, botID domain.BotId,
 }
 
 // handleUserQuestion обрабатывает вопрос пользователя
-// todo рефактор - отправка в раг
-func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, user *domain.User, text string, updateID int64) error {
-	// Проверяем наличие натальной карты (ленивая загрузка - проверяем флаг, не загружаем данные)
+func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, user *domain.User, text string, updateID int64) (err error) {
+	var requestID uuid.UUID
+	var statusStage domain.RequestStage
+	var statusErrorCode string
+	var statusMetadata json.RawMessage
+	var statusCreated bool
+
+	defer func() {
+		if !statusCreated {
+			return
+		}
+
+		if err != nil {
+			// Ошибка - создаём статус ошибки
+			errMsg := err.Error()
+			if statusMetadata == nil {
+				statusMetadata = domain.BuildErrorMetadata(
+					statusStage,
+					statusErrorCode,
+					string(botID),
+					nil,
+				)
+			}
+
+			s.createOrLogStatus(ctx, &domain.Status{
+				ID:           uuid.New(),
+				ObjectType:   domain.ObjectTypeRequest,
+				ObjectID:     requestID,
+				Status:       domain.RequestError,
+				ErrorMessage: &errMsg,
+				Metadata:     statusMetadata,
+				CreatedAt:    time.Now(),
+			})
+		} else {
+			// успех отправки
+			if statusMetadata == nil {
+				return
+			}
+
+			s.createOrLogStatus(ctx, &domain.Status{
+				ID:         uuid.New(),
+				ObjectType: domain.ObjectTypeRequest,
+				ObjectID:   requestID,
+				Status:     domain.RequestSentToRAG,
+				Metadata:   statusMetadata,
+				CreatedAt:  time.Now(),
+			})
+		}
+	}()
+
+	// edge case - вопрос задаёт, а карты нет, если астроапи отдало ошибку, но дата сохранена - догружаем по ходу
 	if user.NatalChartFetchedAt == nil {
-		// Пытаемся получить натальную карту
-		if err := s.fetchAndSaveNatalChart(ctx, user); err != nil {
+		if err = s.fetchAndSaveNatalChart(ctx, user); err != nil {
+			statusStage = domain.StageLoadNatalChart
+			statusErrorCode = "NATAL_CHART_NOT_FOUND"
 			s.Log.Error("failed to fetch natal chart",
 				"error", err,
 				"user_id", user.ID,
@@ -264,7 +311,6 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		}
 	}
 
-	// Создаём запрос
 	request := &domain.Request{
 		ID:          uuid.New(),
 		UserID:      user.ID,
@@ -274,7 +320,11 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		CreatedAt:   time.Now(),
 	}
 
-	if err := s.RequestRepo.Create(ctx, request); err != nil {
+	if err = s.RequestRepo.Create(ctx, request); err != nil {
+		requestID = request.ID
+		statusCreated = true
+		statusStage = domain.StageCreateRequest
+		statusErrorCode = "DB_CREATE_ERROR"
 		s.Log.Error("failed to create request",
 			"error", err,
 			"user_id", user.ID,
@@ -283,38 +333,60 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		return s.sendMessage(ctx, botID, user.TelegramChatID, "❌ Ошибка при создании запроса")
 	}
 
-	// Ленивая загрузка: загружаем natal_chart только когда нужно отправить в RAG
+	requestID = request.ID
+	statusCreated = true
+
+	// lazy loading - карту достаём ток перед отправкой в кафку
 	natalChart, err := s.UserRepo.GetNatalChart(ctx, user.ID)
 	if err != nil {
+		statusStage = domain.StageLoadNatalChart
+		statusErrorCode = "NATAL_CHART_NOT_FOUND"
 		s.Log.Error("failed to get natal chart for RAG",
 			"error", err,
 			"user_id", user.ID,
-			"request_id", request.ID,
+			"request_id", requestID,
 		)
 		return s.sendMessage(ctx, botID, user.TelegramChatID,
 			"❌ Ошибка при получении натальной карты\nПопробуй позже или используй /start")
 	}
 
-	// Отправляем в Kafka для RAG
 	if s.KafkaProducer != nil {
-		if err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.RequestText, natalChart); err != nil {
+		partition, offset, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, request.RequestText, natalChart)
+		if err != nil {
+			statusStage = domain.StageKafkaSend
+			statusErrorCode = "KAFKA_SEND_ERROR"
+			if strings.Contains(err.Error(), "timeout") {
+				statusErrorCode = "KAFKA_TIMEOUT"
+			} else if strings.Contains(err.Error(), "connection") {
+				statusErrorCode = "KAFKA_CONN_ERROR"
+			}
 			s.Log.Error("failed to send request to kafka",
 				"error", err,
-				"request_id", request.ID,
+				"request_id", requestID,
 				"user_id", user.ID,
 			)
 			return s.sendMessage(ctx, botID, user.TelegramChatID,
 				"❌ Ошибка при отправке запроса\nПопробуй позже")
 		}
+
+		// успех отправки
+		statusMetadata = domain.BuildKafkaMetadata(
+			"rag_requests",
+			partition,
+			offset,
+			string(botID),
+			len(text),
+			len(natalChart),
+		)
+
 		s.Log.Info("request sent to kafka",
-			"request_id", request.ID,
-			"user_id", user.ID,
-			"text_length", len(text),
-			"natal_chart_size", len(natalChart),
+			"request_id", requestID,
+			"partition", partition,
+			"offset", offset,
 		)
 	} else {
 		s.Log.Warn("kafka producer not configured, skipping RAG request",
-			"request_id", request.ID,
+			"request_id", requestID,
 		)
 	}
 

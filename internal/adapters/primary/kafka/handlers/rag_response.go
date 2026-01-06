@@ -7,6 +7,7 @@ import (
 
 	"log/slog"
 
+	"github.com/admin/tg-bots/astro-bot/internal/domain"
 	"github.com/google/uuid"
 
 	kafkaPorts "github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
@@ -31,33 +32,26 @@ func NewRAGResponseHandler(telegramService *telegramService.Service, log *slog.L
 func (h *RAGResponseHandler) HandleMessage(ctx context.Context, key string, value []byte) error {
 	var response RAGResponseMessage
 	if err := json.Unmarshal(value, &response); err != nil {
-		h.Log.Error("failed to unmarshal RAG response",
-			"error", err,
-			"key", key,
-		)
 		return fmt.Errorf("failed to unmarshal RAG response: %w", err)
 	}
 
 	requestID, err := uuid.Parse(response.RequestID)
 	if err != nil {
-		h.Log.Error("invalid request_id in RAG response",
-			"error", err,
-			"request_id", response.RequestID,
-		)
 		return fmt.Errorf("invalid request_id: %w", err)
 	}
 
-	h.Log.Info("processing RAG response",
+	botID := domain.BotId(response.BotID)
+	if botID == "" {
+		return fmt.Errorf("bot_id is required in RAG response")
+	}
+
+	h.Log.Debug("processing RAG response",
 		"request_id", requestID,
+		"bot_id", botID,
 		"response_length", len(response.ResponseText),
 	)
 
-	// Вызываем Telegram Service для обработки ответа
-	if err := h.TelegramService.HandleRAGResponse(ctx, requestID, response.ResponseText); err != nil {
-		h.Log.Error("failed to handle RAG response",
-			"error", err,
-			"request_id", requestID,
-		)
+	if err := h.TelegramService.HandleRAGResponse(ctx, requestID, botID, response.ResponseText); err != nil {
 		return fmt.Errorf("failed to handle RAG response: %w", err)
 	}
 
@@ -67,5 +61,6 @@ func (h *RAGResponseHandler) HandleMessage(ctx context.Context, key string, valu
 // RAGResponseMessage структура ответа от RAG
 type RAGResponseMessage struct {
 	RequestID    string `json:"request_id"`
+	BotID        string `json:"bot_id"`
 	ResponseText string `json:"response_text"`
 }

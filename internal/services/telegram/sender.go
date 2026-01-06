@@ -9,25 +9,24 @@ import (
 
 // SendMessage отправляет текстовое сообщение пользователю
 func (s *Service) SendMessage(ctx context.Context, botID domain.BotId, chatID int64, text string) error {
+	_, err := s.SendMessageWithID(ctx, botID, chatID, text)
+	return err
+}
+
+// SendMessageWithID отправляет текстовое сообщение пользователю и возвращает messageID
+func (s *Service) SendMessageWithID(ctx context.Context, botID domain.BotId, chatID int64, text string) (int64, error) {
 	client, ok := s.TelegramClients[botID]
 	if !ok {
-		return fmt.Errorf("telegram client not found for bot_id: %s", botID)
+		return 0, fmt.Errorf("telegram client not found for bot_id: %s", botID)
 	}
 
-	if err := client.SendMessage(ctx, chatID, text); err != nil {
-		s.Log.Error("failed to send message",
-			"error", err,
-			"bot_id", botID,
-			"chat_id", chatID,
-		)
-		return fmt.Errorf("failed to send message: %w", err)
+	messageID, err := client.SendMessageWithID(ctx, chatID, text)
+	if err != nil {
+		// НЕ логируем здесь - UseCase залогирует с бизнес-контекстом
+		return 0, fmt.Errorf("failed to send message: %w", err)
 	}
 
-	s.Log.Debug("message sent successfully",
-		"bot_id", botID,
-		"chat_id", chatID,
-	)
-	return nil
+	return messageID, nil
 }
 
 // SendMessageWithMarkdown отправляет текстовое сообщение с Markdown форматированием
@@ -38,18 +37,9 @@ func (s *Service) SendMessageWithMarkdown(ctx context.Context, botID domain.BotI
 	}
 
 	if err := client.SendMessageWithMarkdown(ctx, chatID, text); err != nil {
-		s.Log.Error("failed to send message with markdown",
-			"error", err,
-			"bot_id", botID,
-			"chat_id", chatID,
-		)
 		return fmt.Errorf("failed to send message with markdown: %w", err)
 	}
 
-	s.Log.Debug("message with markdown sent successfully",
-		"bot_id", botID,
-		"chat_id", chatID,
-	)
 	return nil
 }
 
@@ -61,18 +51,9 @@ func (s *Service) SendMessageWithKeyboard(ctx context.Context, botID domain.BotI
 	}
 
 	if err := client.SendMessageWithKeyboard(ctx, chatID, text, keyboard); err != nil {
-		s.Log.Error("failed to send message with keyboard",
-			"error", err,
-			"bot_id", botID,
-			"chat_id", chatID,
-		)
 		return fmt.Errorf("failed to send message with keyboard: %w", err)
 	}
 
-	s.Log.Debug("message with keyboard sent successfully",
-		"bot_id", botID,
-		"chat_id", chatID,
-	)
 	return nil
 }
 
@@ -84,17 +65,10 @@ func (s *Service) AnswerCallbackQuery(ctx context.Context, botID domain.BotId, c
 	}
 
 	if err := client.AnswerCallbackQuery(ctx, callbackID, text, showAlert); err != nil {
-		s.Log.Error("failed to answer callback query",
-			"error", err,
-			"bot_id", botID,
-			"callback_id", callbackID,
-		)
+		// НЕ логируем здесь - UseCase залогирует с бизнес-контекстом
 		return fmt.Errorf("failed to answer callback query: %w", err)
 	}
 
-	s.Log.Debug("callback query answered successfully",
-		"bot_id", botID,
-		"callback_id", callbackID,
-	)
+	// Успех тоже не логируем - UseCase залогирует
 	return nil
 }

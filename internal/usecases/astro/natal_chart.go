@@ -18,7 +18,6 @@ func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User)
 		return fmt.Errorf("birth place is not set")
 	}
 
-	// Получаем натальную карту из астро-API
 	natalChart, err := s.AstroAPIService.CalculateNatalChart(ctx, *user.BirthDateTime, *user.BirthPlace)
 	if err != nil {
 		return fmt.Errorf("failed to calculate natal chart: %w", err)

@@ -7,7 +7,6 @@ import (
 
 	TgClient "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
-	"github.com/admin/tg-bots/astro-bot/internal/ports/repository"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
 )
 
@@ -15,7 +14,6 @@ type Service struct {
 	BotIDToType      map[domain.BotId]domain.BotType        // botID → botType (для роутинга к UseCase)
 	BotTypeToUsecase map[domain.BotType]service.IBotService // botType → UseCase
 	TelegramClients  map[domain.BotId]*TgClient.Client      // botID → Client
-	RequestRepo      repository.IRequestRepo                // для получения request по ID
 	Log              *slog.Logger
 }
 
@@ -23,14 +21,12 @@ func New(
 	botIDToType map[domain.BotId]domain.BotType,
 	botServices map[domain.BotType]service.IBotService,
 	telegramClients map[domain.BotId]*TgClient.Client,
-	requestRepo repository.IRequestRepo,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
 		BotIDToType:      botIDToType,
 		BotTypeToUsecase: botServices,
 		TelegramClients:  telegramClients,
-		RequestRepo:      requestRepo,
 		Log:              log,
 	}
 }
@@ -48,5 +44,3 @@ func (s *Service) GetBotType(botID domain.BotId) (domain.BotType, error) {
 	}
 	return botType, nil
 }
-
-//todo подумать норм ли, что репозитории есть и в бизнес-логике и в телеграм сервисе

@@ -20,6 +20,14 @@ const (
 	GetNatalReport = "analysis/natal-report"
 )
 
+// truncateString обрезает строку до указанной длины
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
 // Client - клиент для работы с астрологическим API
 type Client struct {
 	cfg        *Config
@@ -83,21 +91,22 @@ func (c *Client) CalculateNatalChart(ctx context.Context, req NatalChartRequest)
 
 	// Проверяем HTTP статус код
 	if resp.StatusCode != http.StatusOK {
-		c.Log.Error("astro API returned non-200 status",
+		// Ошибка внешнего API - Debug
+		c.Log.Debug("astro API returned non-200 status",
 			"status_code", resp.StatusCode,
-			"body", rawJSON,
+			"body_preview", truncateString(rawJSON, 200),
 		)
-		return nil, fmt.Errorf("astro API returned error: HTTP %d, body: %s", resp.StatusCode, rawJSON)
+		return nil, fmt.Errorf("astro API error [status=%d]: %s", resp.StatusCode, truncateString(rawJSON, 500))
 	}
 
 	var chartResp NatalChartResponse
 	if err := json.Unmarshal(body, &chartResp); err != nil {
-		c.Log.Error("failed to unmarshal astro API response",
+		c.Log.Debug("failed to unmarshal astro API response",
 			"error", err,
 			"status_code", resp.StatusCode,
-			"body", rawJSON,
+			"body_preview", truncateString(rawJSON, 200),
 		)
-		return nil, fmt.Errorf("ошибка парсинга ответа: %w. Тело ответа: %s", err, rawJSON)
+		return nil, fmt.Errorf("astro API unmarshal failed [status=%d]: %w", resp.StatusCode, err)
 	}
 
 	chartResp.RawJSON = rawJSON

@@ -17,6 +17,14 @@ const (
 	apiTimeout         = 30 * time.Second
 )
 
+// truncateString обрезает строку до указанной длины
+func truncateString(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}
+
 // Client клиент для работы с Telegram Bot API
 type Client struct {
 	httpClient *http.Client
@@ -66,6 +74,12 @@ type SendMessageResponse struct {
 
 // SendMessage отправляет текстовое сообщение
 func (c *Client) SendMessage(ctx context.Context, chatID int64, text string) error {
+	_, err := c.SendMessageWithID(ctx, chatID, text)
+	return err
+}
+
+// SendMessageWithID отправляет текстовое сообщение и возвращает messageID
+func (c *Client) SendMessageWithID(ctx context.Context, chatID int64, text string) (int64, error) {
 	req := SendMessageRequest{
 		ChatID: chatID,
 		Text:   text,
@@ -82,7 +96,8 @@ func (c *Client) SendMessageWithMarkdown(ctx context.Context, chatID int64, text
 		ParseMode: "Markdown",
 	}
 
-	return c.sendMessage(ctx, req)
+	_, err := c.sendMessage(ctx, req)
+	return err
 }
 
 // SendMessageWithKeyboard отправляет сообщение с клавиатурой
@@ -93,72 +108,82 @@ func (c *Client) SendMessageWithKeyboard(ctx context.Context, chatID int64, text
 		ReplyMarkup: keyboard,
 	}
 
-	return c.sendMessage(ctx, req)
+	_, err := c.sendMessage(ctx, req)
+	return err
 }
 
-// sendMessage выполняет запрос к Telegram API для отправки сообщения
-func (c *Client) sendMessage(ctx context.Context, req SendMessageRequest) error {
+// sendMessage выполняет запрос к Telegram API для отправки сообщения и возвращает messageID
+func (c *Client) sendMessage(ctx context.Context, req SendMessageRequest) (int64, error) {
 	url := c.baseURL + "/sendMessage"
 
 	jsonData, err := json.Marshal(req)
 	if err != nil {
+		// Системная ошибка - Error (критично)
 		c.log.Error("failed to marshal request",
 			"error", err,
 			"chat_id", req.ChatID,
 		)
-		return fmt.Errorf("failed to marshal request: %w", err)
+		return 0, fmt.Errorf("telegram marshal failed [chat_id=%d]: %w", req.ChatID, err)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
+		// Системная ошибка - Error (критично)
 		c.log.Error("failed to create request",
 			"error", err,
 			"chat_id", req.ChatID,
 		)
-		return fmt.Errorf("failed to create request: %w", err)
+		return 0, fmt.Errorf("telegram create request failed [chat_id=%d]: %w", req.ChatID, err)
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		c.log.Error("failed to send request to telegram",
+		// Ошибка соединения - Debug
+		c.log.Debug("telegram request failed",
 			"error", err,
 			"chat_id", req.ChatID,
 		)
-		return fmt.Errorf("failed to send request to telegram: %w", err)
+		return 0, fmt.Errorf("telegram request failed [chat_id=%d]: %w", req.ChatID, err)
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
+		// Системная ошибка - Error (критично)
 		c.log.Error("failed to read response body",
 			"error", err,
 			"chat_id", req.ChatID,
 			"status_code", resp.StatusCode,
 		)
-		return fmt.Errorf("failed to read response body: %w", err)
+		return 0, fmt.Errorf("telegram read body failed [chat_id=%d, status=%d]: %w",
+			req.ChatID, resp.StatusCode, err)
 	}
 
 	var apiResp SendMessageResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
+		// Системная ошибка - Error (критично)
 		c.log.Error("failed to unmarshal response",
 			"error", err,
 			"chat_id", req.ChatID,
 			"status_code", resp.StatusCode,
-			"body", string(body),
+			"body_preview", truncateString(string(body), 200),
 		)
-		return fmt.Errorf("failed to unmarshal response: %w", err)
+		return 0, fmt.Errorf("telegram unmarshal failed [chat_id=%d, status=%d]: %w",
+			req.ChatID, resp.StatusCode, err)
 	}
 
 	if !apiResp.OK {
-		c.log.Error("telegram API returned error",
+		// Ошибка внешнего API - Debug
+		c.log.Debug("telegram API error",
 			"error_code", apiResp.ErrorCode,
 			"description", apiResp.Description,
 			"chat_id", req.ChatID,
 			"status_code", resp.StatusCode,
 		)
-		return fmt.Errorf("telegram API error: %s (code: %d)", apiResp.Description, apiResp.ErrorCode)
+		return 0, fmt.Errorf("telegram API error [code=%d, chat_id=%d]: %s",
+			apiResp.ErrorCode, req.ChatID, apiResp.Description)
 	}
 
 	c.log.Debug("message sent successfully",
@@ -166,7 +191,7 @@ func (c *Client) sendMessage(ctx context.Context, req SendMessageRequest) error 
 		"message_id", apiResp.Result.MessageID,
 	)
 
-	return nil
+	return apiResp.Result.MessageID, nil
 }
 
 // GetMe получает информацию о боте
@@ -186,14 +211,14 @@ func (c *Client) GetMe(ctx context.Context) error {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		c.log.Error("getMe failed",
+		c.log.Debug("getMe failed",
 			"status_code", resp.StatusCode,
 			"body", string(body),
 		)
-		return fmt.Errorf("getMe failed with status %d", resp.StatusCode)
+		return fmt.Errorf("getMe failed [status=%d]: %s", resp.StatusCode, string(body))
 	}
 
-	c.log.Info("bot info retrieved successfully")
+	c.log.Debug("bot info retrieved successfully")
 	return nil
 }
 
@@ -248,24 +273,26 @@ func (c *Client) SetMyCommands(ctx context.Context, commands []BotCommand) error
 
 	var apiResp APIResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
+		// Системная ошибка - Error (критично)
 		c.log.Error("failed to unmarshal response",
 			"error", err,
 			"status_code", resp.StatusCode,
-			"body", string(body),
+			"body_preview", truncateString(string(body), 200),
 		)
-		return fmt.Errorf("failed to unmarshal response: %w", err)
+		return fmt.Errorf("telegram unmarshal failed [status=%d]: %w", resp.StatusCode, err)
 	}
 
 	if !apiResp.OK {
-		c.log.Error("telegram API returned error",
+		// Ошибка внешнего API - Debug
+		c.log.Debug("telegram API error",
 			"error_code", apiResp.ErrorCode,
 			"description", apiResp.Description,
 			"status_code", resp.StatusCode,
 		)
-		return fmt.Errorf("telegram API error: %s (code: %d)", apiResp.Description, apiResp.ErrorCode)
+		return fmt.Errorf("telegram API error [code=%d]: %s", apiResp.ErrorCode, apiResp.Description)
 	}
 
-	c.log.Info("bot commands registered successfully", "commands_count", len(commands))
+	c.log.Debug("bot commands registered successfully", "commands_count", len(commands))
 	return nil
 }
 
@@ -277,7 +304,7 @@ type SetWebhookRequest struct {
 
 // SetWebhook устанавливает webhook для бота
 // url - URL для получения обновлений
-// secretToken - секретный токен для валидации запросов (будет отправлен в заголовке X-Telegram-Bot-Api-Secret-Token)
+// secretToken - domain.BotId (будет отправлен в заголовке X-Telegram-Bot-Api-Secret-Token)
 func (c *Client) SetWebhook(ctx context.Context, url string, secretToken string) error {
 	reqBody := SetWebhookRequest{
 		URL:         url,
@@ -309,25 +336,28 @@ func (c *Client) SetWebhook(ctx context.Context, url string, secretToken string)
 
 	var apiResp APIResponse
 	if err := json.Unmarshal(body, &apiResp); err != nil {
+		// Системная ошибка - Error (критично)
 		c.log.Error("failed to unmarshal response",
 			"error", err,
 			"status_code", resp.StatusCode,
-			"body", string(body),
+			"body_preview", truncateString(string(body), 200),
 		)
-		return fmt.Errorf("failed to unmarshal response: %w", err)
+		return fmt.Errorf("telegram unmarshal failed [status=%d]: %w", resp.StatusCode, err)
 	}
 
 	if !apiResp.OK {
-		c.log.Error("telegram API returned error",
+		// Ошибка внешнего API - Debug
+		c.log.Debug("telegram API error",
 			"error_code", apiResp.ErrorCode,
 			"description", apiResp.Description,
 			"status_code", resp.StatusCode,
 			"url", url,
 		)
-		return fmt.Errorf("telegram API error: %s (code: %d)", apiResp.Description, apiResp.ErrorCode)
+		return fmt.Errorf("telegram API error [code=%d, url=%s]: %s",
+			apiResp.ErrorCode, url, apiResp.Description)
 	}
 
-	c.log.Info("webhook set successfully",
+	c.log.Debug("webhook set successfully",
 		"url", url,
 		"has_secret_token", secretToken != "",
 	)

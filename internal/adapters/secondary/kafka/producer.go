@@ -8,6 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/IBM/sarama"
+	"github.com/admin/tg-bots/astro-bot/internal/domain"
 	"github.com/google/uuid"
 )
 
@@ -54,20 +55,47 @@ func NewProducer(cfg *Config, log *slog.Logger) (*Producer, error) {
 	}, nil
 }
 
-// SendRAGRequest отправляет запрос в RAG
-func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, requestText string, natalChart []byte) error {
+// SendRAGRequest отправляет запрос в RAG и возвращает partition и offset
+func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botID domain.BotId, requestText string, natalChart []byte) (int32, int64, error) {
 	message := RAGRequestMessage{
 		RequestID:   requestID.String(),
+		BotID:       string(botID), // Конвертируем доменный тип в строку только для JSON
 		RequestText: requestText,
 		NatalChart:  string(natalChart),
 	}
 
 	value, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("failed to marshal RAG request: %w", err)
+		return 0, 0, fmt.Errorf("failed to marshal RAG request: %w", err)
 	}
 
-	return p.Send(ctx, requestID.String(), value)
+	msg := &sarama.ProducerMessage{
+		Topic: p.cfg.Topic,
+		Key:   sarama.StringEncoder(requestID.String()),
+		Value: sarama.ByteEncoder(value),
+	}
+
+	partition, offset, err := p.producer.SendMessage(msg)
+	if err != nil {
+		// Debug для технических деталей
+		p.log.Debug("kafka send failed",
+			"error", err,
+			"topic", p.cfg.Topic,
+			"key", requestID.String(),
+		)
+		// Оборачиваем с техническими деталями
+		return 0, 0, fmt.Errorf("kafka send failed [topic=%s, key=%s]: %w",
+			p.cfg.Topic, requestID.String(), err)
+	}
+
+	p.log.Debug("message sent to kafka",
+		"topic", p.cfg.Topic,
+		"partition", partition,
+		"offset", offset,
+		"key", requestID.String(),
+	)
+
+	return partition, offset, nil
 }
 
 // Send отправляет произвольное сообщение
@@ -80,12 +108,15 @@ func (p *Producer) Send(ctx context.Context, key string, value []byte) error {
 
 	partition, offset, err := p.producer.SendMessage(msg)
 	if err != nil {
-		p.log.Error("failed to send message to kafka",
+		// Debug для технических деталей
+		p.log.Debug("kafka send failed",
 			"error", err,
 			"topic", p.cfg.Topic,
 			"key", key,
 		)
-		return fmt.Errorf("failed to send message to kafka: %w", err)
+		// Оборачиваем с техническими деталями
+		return fmt.Errorf("kafka send failed [topic=%s, key=%s]: %w",
+			p.cfg.Topic, key, err)
 	}
 
 	p.log.Debug("message sent to kafka",
@@ -110,6 +141,7 @@ func (p *Producer) Close() error {
 // RAGRequestMessage структура сообщения для RAG
 type RAGRequestMessage struct {
 	RequestID   string `json:"request_id"`
+	BotID       string `json:"bot_id"` // ID бота для роутинга ответа
 	RequestText string `json:"request_text"`
 	NatalChart  string `json:"natal_chart"`
 }

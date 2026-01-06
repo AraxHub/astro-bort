@@ -35,9 +35,8 @@ func (c *Controller) handleWebhook(ctx *gin.Context) {
 
 	botID := domain.BotId(secretToken)
 
-	// Валидируем, что bot_id существует в конфигурации
 	if _, err := c.TgService.GetBotType(botID); err != nil {
-		c.Log.Warn("unknown bot_id in webhook",
+		c.Log.Error("unknown bot_id in webhook",
 			"bot_id", botID,
 			"error", err,
 		)
@@ -62,15 +61,14 @@ func (c *Controller) handleWebhook(ctx *gin.Context) {
 	)
 
 	if err := c.TgService.HandleUpdate(ctx.Request.Context(), botID, &update); err != nil {
-		c.Log.Error("failed to handle update",
-			"error", err,
-			"update_id", update.UpdateID,
-			"bot_id", botID,
-		)
+		if !domain.IsBusinessError(err) {
+			c.Log.Error("failed to handle webhook update",
+				"error", err,
+				"bot_id", botID)
+		}
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process update"})
 		return
 	}
 
-	// Telegram ожидает 200 OK в ответ
 	ctx.JSON(http.StatusOK, gin.H{"ok": true})
 }

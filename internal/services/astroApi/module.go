@@ -58,13 +58,11 @@ func (s *Service) CalculateNatalChart(ctx context.Context, birthDateTime time.Ti
 		return nil, fmt.Errorf("failed to calculate natal chart: %w", err)
 	}
 
-	// API возвращает данные напрямую, без обёртки {status: "success"}
-	// Проверяем, что есть данные в ответе
+	//костыль
 	if resp.RawJSON == "" {
 		return nil, fmt.Errorf("astro API returned empty response")
 	}
 
-	// Если есть явный статус ошибки - обрабатываем
 	if resp.Status != "" && resp.Status != "success" {
 		return nil, fmt.Errorf("astro API returned error: status=%s, code=%d, message=%s, raw_response=%s",
 			resp.Status, resp.Code, resp.Message, resp.RawJSON)

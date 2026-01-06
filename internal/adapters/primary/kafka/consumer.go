@@ -9,6 +9,7 @@ import (
 	"github.com/IBM/sarama"
 
 	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
+	"github.com/admin/tg-bots/astro-bot/internal/domain"
 	kafkaPorts "github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 )
 
@@ -131,7 +132,10 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 			)
 
 			if err := h.handler.HandleMessage(session.Context(), key, value); err != nil {
-				h.log.Error("failed to handle message",
+				if domain.IsBusinessError(err) {
+					continue
+				}
+				h.log.Error("failed to handle kafka message",
 					"error", err,
 					"topic", message.Topic,
 					"key", key,

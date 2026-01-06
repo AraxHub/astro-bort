@@ -13,6 +13,7 @@ import (
 // HandleUpdate Основной метод для обработки всех типов обновлений
 func (s *Service) HandleUpdate(ctx context.Context, botID domain.BotId, update *domain.Update) error {
 	if update == nil {
+		s.Log.Error("update is nil")
 		return fmt.Errorf("update is nil")
 	}
 
@@ -35,7 +36,7 @@ func (s *Service) HandleMessage(ctx context.Context, botID domain.BotId, message
 	}
 
 	if message.Chat != nil && message.Chat.Type != "private" {
-		s.Log.Warn("ignoring message from group/chat",
+		s.Log.Debug("ignoring message from group/chat",
 			"update_id", updateID,
 			"chat_type", message.Chat.Type,
 			"chat_id", message.Chat.ID,
@@ -43,7 +44,6 @@ func (s *Service) HandleMessage(ctx context.Context, botID domain.BotId, message
 		return nil
 	}
 
-	// Определяем botType из botID через маппинг
 	botType, err := s.GetBotType(botID)
 	if err != nil {
 		return fmt.Errorf("failed to get bot_type for bot_id %s: %w", botID, err)
@@ -54,20 +54,17 @@ func (s *Service) HandleMessage(ctx context.Context, botID domain.BotId, message
 		return fmt.Errorf("unknown bot_type: %s", botType)
 	}
 
-	// Получаем или создаём пользователя через use case
 	user, err := botService.GetOrCreateUser(ctx, botID, message.From, message.Chat)
 	if err != nil {
-		s.Log.Error("failed to get or create user",
-			"error", err,
-			"telegram_user_id", message.From.ID,
-			"update_id", updateID,
-			"bot_id", botID,
-		)
-		return fmt.Errorf("failed to get or create user: %w", err)
+		return domain.WrapBusinessError(fmt.Errorf("failed to get or create user: %w", err))
 	}
 
 	if message.Text != nil {
-		return s.routeTextMessage(ctx, botID, botService, user, *message.Text, updateID)
+		err := s.routeTextMessage(ctx, botID, botService, user, *message.Text, updateID)
+		if err != nil {
+			return domain.WrapBusinessError(err)
+		}
+		return nil
 	}
 
 	return nil
@@ -102,39 +99,21 @@ func IsCommand(text string) bool {
 }
 
 // HandleRAGResponse обрабатывает ответ от RAG - роутинг в usecase
-func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, responseText string) error {
-	// Получаем request по request_id
-	request, err := s.RequestRepo.GetByID(ctx, requestID)
+func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, botID domain.BotId, responseText string) error {
+	botType, err := s.GetBotType(botID)
 	if err != nil {
-		s.Log.Error("failed to get request by id",
-			"error", err,
-			"request_id", requestID,
-		)
-		return fmt.Errorf("failed to get request: %w", err)
+		return fmt.Errorf("failed to get bot_type [bot_id=%s, request_id=%s]: %w",
+			botID, requestID, err)
 	}
 
-	// Определяем botType из botID через маппинг
-	botType, err := s.GetBotType(request.BotID)
-	if err != nil {
-		s.Log.Error("failed to get bot_type for bot_id",
-			"error", err,
-			"bot_id", request.BotID,
-			"request_id", requestID,
-		)
-		return fmt.Errorf("failed to get bot_type: %w", err)
-	}
-
-	// Роутим к нужному UseCase
 	botService, ok := s.BotTypeToUsecase[botType]
 	if !ok {
-		s.Log.Error("unknown bot_type",
-			"bot_type", botType,
-			"bot_id", request.BotID,
-			"request_id", requestID,
-		)
-		return fmt.Errorf("unknown bot_type: %s", botType)
+		return fmt.Errorf("unknown bot_type [bot_type=%s, bot_id=%s, request_id=%s]",
+			botType, botID, requestID)
 	}
 
-	// Вызываем HandleRAGResponse в UseCase
-	return botService.HandleRAGResponse(ctx, requestID, responseText)
+	if err = botService.HandleRAGResponse(ctx, requestID, responseText); err != nil {
+		return domain.WrapBusinessError(err)
+	}
+	return nil
 }

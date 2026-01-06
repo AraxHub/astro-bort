@@ -81,7 +81,6 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		botIDToType,
 		make(map[domain.BotType]service.IBotService), // botServices будет заполнен после создания UseCase
 		telegramClients,
-		requestRepo, // для получения request по ID в HandleRAGResponse
 		a.Log,
 	)
 
