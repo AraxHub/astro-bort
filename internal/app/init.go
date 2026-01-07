@@ -110,7 +110,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 				continue
 			}
 			kafkaProducers[kafkaCfg.Name] = prod
-			if kafkaCfg.Name == "rag_requests" {
+			if kafkaCfg.Name == "requests" {
 				ragProducer = prod
 			}
 		}
@@ -282,7 +282,7 @@ func (a *App) createHandlerForTopic(
 	tgService *telegramService.Service,
 ) kafka.MessageHandler {
 	switch topicName {
-	case "rag_responses":
+	case "responses":
 		return kafkaHandlers.NewRAGResponseHandler(tgService, a.Log)
 	default:
 		a.Log.Warn("unknown kafka topic, using default handler",

@@ -370,7 +370,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 
 		// успех отправки
 		statusMetadata = domain.BuildKafkaMetadata(
-			"rag_requests",
+			"requests",
 			partition,
 			offset,
 			string(botID),
