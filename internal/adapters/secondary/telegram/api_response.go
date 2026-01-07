@@ -6,4 +6,3 @@ type APIResponse struct {
 	Description string `json:"description,omitempty"`
 	ErrorCode   int    `json:"error_code,omitempty"`
 }
-

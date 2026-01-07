@@ -238,6 +238,50 @@ func (r *Repository) Update(ctx context.Context, user *domain.User) error {
 	return nil
 }
 
+// UpdateProfile обновляет только тг-данные (без natal_chart и natal_chart_fetched_at)
+func (r *Repository) UpdateProfile(ctx context.Context, user *domain.User) error {
+	query := fmt.Sprintf(`UPDATE %s SET 
+		%s = $2, %s = $3, %s = $4, %s = $5, %s = $6, 
+		%s = $7, %s = $8, %s = $9, %s = $10, %s = $11
+		WHERE %s = $1`,
+		r.columns.TableName,
+		r.columns.TelegramUserID,
+		r.columns.TelegramChatID,
+		r.columns.FirstName,
+		r.columns.LastName,
+		r.columns.Username,
+		r.columns.BirthDateTime,
+		r.columns.BirthPlace,
+		r.columns.BirthDataSetAt,
+		r.columns.BirthDataCanChangeUntil,
+		r.columns.UpdatedAt,
+		r.columns.ID)
+	rowsAffected, err := r.db.ExecWithResult(ctx, query,
+		user.ID,
+		user.TelegramUserID,
+		user.TelegramChatID,
+		user.FirstName,
+		user.LastName,
+		user.Username,
+		user.BirthDateTime,
+		user.BirthPlace,
+		user.BirthDataSetAt,
+		user.BirthDataCanChangeUntil,
+		user.UpdatedAt)
+	if err != nil {
+		r.Log.Error("failed to update user profile",
+			"error", err,
+			"user_id", user.ID)
+		return fmt.Errorf("failed to update user profile: %w", err)
+	}
+	if rowsAffected == 0 {
+		r.Log.Warn("user not found for profile update", "user_id", user.ID)
+		return fmt.Errorf("user not found")
+	}
+	r.Log.Debug("user profile updated successfully", "user_id", user.ID, "rowsAffected", rowsAffected)
+	return nil
+}
+
 // UpdateLastSeen обновляет время последней активности пользователя
 func (r *Repository) UpdateLastSeen(ctx context.Context, userID uuid.UUID) error {
 	now := time.Now()

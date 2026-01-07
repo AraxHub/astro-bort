@@ -389,6 +389,10 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		)
 	}
 
-	return s.sendMessage(ctx, botID, user.TelegramChatID,
-		"✅ Запрос получен\nОбрабатываю...")
+	/*
+		return s.sendMessage(ctx, botID, user.TelegramChatID,
+			"✅ Запрос получен\nОбрабатываю...")
+	*/
+	//todo rollback after load test
+	return nil
 }

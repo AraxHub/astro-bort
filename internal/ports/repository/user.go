@@ -15,6 +15,7 @@ type IUserRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
 	GetNatalChart(ctx context.Context, userID uuid.UUID) (domain.NatalReport, error)
 	Update(ctx context.Context, user *domain.User) error
+	UpdateProfile(ctx context.Context, user *domain.User) error
 	UpdateLastSeen(ctx context.Context, userID uuid.UUID) error
 
 	BeginTx(ctx context.Context) (persistence.Transaction, error)

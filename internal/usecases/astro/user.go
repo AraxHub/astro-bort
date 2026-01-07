@@ -14,38 +14,40 @@ func (s *Service) GetOrCreateUser(ctx context.Context, botID domain.BotId, tgUse
 	// Пытаемся найти существующего пользователя
 	user, err := s.UserRepo.GetByTelegramID(ctx, tgUser.ID)
 	if err == nil && user != nil {
-		// Пользователь найден, обновляем данные если нужно
 		needsUpdate := false
+
 		if user.FirstName != tgUser.FirstName {
-			user.FirstName = tgUser.FirstName
 			needsUpdate = true
 		}
-		if (tgUser.LastName != nil && (user.LastName == nil || *user.LastName != *tgUser.LastName)) ||
-			(tgUser.LastName == nil && user.LastName != nil) {
-			user.LastName = tgUser.LastName
+
+		if (tgUser.LastName == nil) != (user.LastName == nil) ||
+			(tgUser.LastName != nil && user.LastName != nil && *tgUser.LastName != *user.LastName) {
 			needsUpdate = true
 		}
-		if (tgUser.Username != nil && (user.Username == nil || *user.Username != *tgUser.Username)) ||
-			(tgUser.Username == nil && user.Username != nil) {
-			user.Username = tgUser.Username
+		if (tgUser.Username == nil) != (user.Username == nil) ||
+			(tgUser.Username != nil && user.Username != nil && *tgUser.Username != *user.Username) {
 			needsUpdate = true
 		}
 		if user.TelegramChatID != chat.ID {
-			user.TelegramChatID = chat.ID
 			needsUpdate = true
 		}
 
 		if needsUpdate {
+			// Обновляем объект только если изменились данные
+			user.FirstName = tgUser.FirstName
+			user.LastName = tgUser.LastName
+			user.Username = tgUser.Username
+			user.TelegramChatID = chat.ID
 			user.UpdatedAt = time.Now()
-			if err := s.UserRepo.Update(ctx, user); err != nil {
-				s.Log.Warn("failed to update user",
+
+			if err := s.UserRepo.UpdateProfile(ctx, user); err != nil {
+				s.Log.Warn("failed to update user profile",
 					"error", err,
 					"user_id", user.ID,
 				)
 			}
 		}
 
-		// Обновляем время последней активности
 		if err := s.UserRepo.UpdateLastSeen(ctx, user.ID); err != nil {
 			s.Log.Warn("failed to update last seen",
 				"error", err,
@@ -56,7 +58,6 @@ func (s *Service) GetOrCreateUser(ctx context.Context, botID domain.BotId, tgUse
 		return user, nil
 	}
 
-	// Пользователь не найден, создаём нового
 	now := time.Now()
 	user = &domain.User{
 		ID:             uuid.New(),

@@ -88,11 +88,26 @@ func (s *Service) HandleMyInfo(ctx context.Context, botID domain.BotId, user *do
 		message.WriteString("📅 Дата рождения: не установлена\n")
 	}
 
-	if user.NatalChartFetchedAt != nil {
+	// Проверяем реальное наличие карты в БД, а не только флаг
+	natalReport, err := s.UserRepo.GetNatalChart(ctx, user.ID)
+	if err != nil {
+		s.Log.Error("failed to get natal chart for my_info",
+			"error", err,
+			"user_id", user.ID,
+		)
+		message.WriteString("✨ Натальная карта: ❌ (ошибка при проверке)\n")
+	} else if len(natalReport) > 0 {
 		message.WriteString("✨ Натальная карта: ✅\n")
-		message.WriteString(fmt.Sprintf("   Получена: %s\n", user.NatalChartFetchedAt.Format("02.01.2006 15:04")))
+		if user.NatalChartFetchedAt != nil {
+			message.WriteString(fmt.Sprintf("   Получена: %s\n", user.NatalChartFetchedAt.Format("02.01.2006 15:04")))
+		}
 	} else {
-		message.WriteString("✨ Натальная карта: не установлена, воспользуйся /reset_birth_data\n")
+		message.WriteString("✨ Натальная карта: ❌ (не установлена)\n")
+		if user.BirthDateTime != nil && user.BirthPlace != nil {
+			message.WriteString("   Используй /start для расчёта карты\n")
+		} else {
+			message.WriteString("   Используй /reset_birth_data для настройки\n")
+		}
 	}
 
 	return s.sendMessage(ctx, botID, user.TelegramChatID, message.String())
