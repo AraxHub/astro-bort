@@ -9,7 +9,7 @@ import (
 
 // IKafkaProducer интерфейс для отправки сообщений в Kafka
 type IKafkaProducer interface {
-	SendRAGRequest(ctx context.Context, requestID uuid.UUID, botID domain.BotId, requestText string, natalChart []byte) (partition int32, offset int64, err error)
+	SendRAGRequest(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, requestText string, natalReport domain.NatalReport) (partition int32, offset int64, err error)
 	Send(ctx context.Context, key string, value []byte) error
 	Close() error
 }

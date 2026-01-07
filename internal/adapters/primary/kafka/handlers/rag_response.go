@@ -45,13 +45,18 @@ func (h *RAGResponseHandler) HandleMessage(ctx context.Context, key string, valu
 		return fmt.Errorf("bot_id is required in RAG response")
 	}
 
+	if response.ChatID == 0 {
+		return fmt.Errorf("chat_id is required in RAG response")
+	}
+
 	h.Log.Debug("processing RAG response",
 		"request_id", requestID,
 		"bot_id", botID,
+		"chat_id", response.ChatID,
 		"response_length", len(response.ResponseText),
 	)
 
-	if err := h.TelegramService.HandleRAGResponse(ctx, requestID, botID, response.ResponseText); err != nil {
+	if err := h.TelegramService.HandleRAGResponse(ctx, requestID, botID, response.ChatID, response.ResponseText); err != nil {
 		return fmt.Errorf("failed to handle RAG response: %w", err)
 	}
 
@@ -62,5 +67,6 @@ func (h *RAGResponseHandler) HandleMessage(ctx context.Context, key string, valu
 type RAGResponseMessage struct {
 	RequestID    string `json:"request_id"`
 	BotID        string `json:"bot_id"`
+	ChatID       int64  `json:"chat_id"`
 	ResponseText string `json:"response_text"`
 }

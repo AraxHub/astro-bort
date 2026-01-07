@@ -84,7 +84,6 @@ func (s *Service) isBirthDateInput(text string) bool {
 // handleBirthDateInput обрабатывает ввод даты рождения
 // Формат: ДД.ММ.ГГГГ чч:мм Город, КодСтраны или ДД.ММ.ГГГГ чч:мм Город
 func (s *Service) handleBirthDateInput(ctx context.Context, botID domain.BotId, user *domain.User, text string) error {
-	// Сразу отправляем ответ, что начинаем расчёт
 	if err := s.sendMessage(ctx, botID, user.TelegramChatID, "✨ Рассчитываю твою натальную карту..."); err != nil {
 		s.Log.Warn("failed to send calculation message",
 			"error", err,
@@ -336,22 +335,22 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 	requestID = request.ID
 	statusCreated = true
 
-	// lazy loading - карту достаём ток перед отправкой в кафку
-	natalChart, err := s.UserRepo.GetNatalChart(ctx, user.ID)
+	// lazy loading - отчёт достаём ток перед отправкой в кафку
+	natalReport, err := s.UserRepo.GetNatalChart(ctx, user.ID)
 	if err != nil {
 		statusStage = domain.StageLoadNatalChart
 		statusErrorCode = "NATAL_CHART_NOT_FOUND"
-		s.Log.Error("failed to get natal chart for RAG",
+		s.Log.Error("failed to get natal report for RAG",
 			"error", err,
 			"user_id", user.ID,
 			"request_id", requestID,
 		)
 		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"❌ Ошибка при получении натальной карты\nПопробуй позже или используй /start")
+			"❌ Ошибка при получении натального отчёта\nПопробуй позже или используй /start")
 	}
 
 	if s.KafkaProducer != nil {
-		partition, offset, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, request.RequestText, natalChart)
+		partition, offset, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport)
 		if err != nil {
 			statusStage = domain.StageKafkaSend
 			statusErrorCode = "KAFKA_SEND_ERROR"
@@ -376,7 +375,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 			offset,
 			string(botID),
 			len(text),
-			len(natalChart),
+			len(natalReport),
 		)
 
 		s.Log.Info("request sent to kafka",

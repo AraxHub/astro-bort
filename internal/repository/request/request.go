@@ -93,7 +93,7 @@ func (r *Repository) Create(ctx context.Context, request *domain.Request) error 
 	return nil
 }
 
-// Update обновляет ответ в запросе
+// UpdateResponseText обновляет ответ в запросе
 func (r *Repository) UpdateResponseText(ctx context.Context, request *domain.Request) error {
 	query := fmt.Sprintf(`UPDATE %s SET %s = $1 WHERE %s = $2`,
 		r.columns.TableName,
@@ -109,6 +109,26 @@ func (r *Repository) UpdateResponseText(ctx context.Context, request *domain.Req
 	}
 	r.Log.Debug("request updated successfully",
 		"request_id", request.ID,
+	)
+	return nil
+}
+
+// UpdateResponseTextByID обновляет ответ в запросе напрямую по ID (без SELECT)
+func (r *Repository) UpdateResponseTextByID(ctx context.Context, requestID uuid.UUID, responseText string) error {
+	query := fmt.Sprintf(`UPDATE %s SET %s = $1 WHERE %s = $2`,
+		r.columns.TableName,
+		r.columns.ResponseText,
+		r.columns.ID)
+	err := r.db.Exec(ctx, query, responseText, requestID)
+	if err != nil {
+		r.Log.Error("failed to update request by id",
+			"error", err,
+			"request_id", requestID,
+		)
+		return fmt.Errorf("failed to update request: %w", err)
+	}
+	r.Log.Debug("request updated successfully by id",
+		"request_id", requestID,
 	)
 	return nil
 }

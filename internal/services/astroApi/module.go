@@ -23,6 +23,7 @@ func New(client *astroApiAdapter.Client) service.IAstroAPIService {
 }
 
 // CalculateNatalChart рассчитывает натальную карту по дате рождения и месту
+// Оставлен для обратной совместимости, но рекомендуется использовать GetNatalReport
 func (s *Service) CalculateNatalChart(ctx context.Context, birthDateTime time.Time, birthPlace string) (domain.NatalChart, error) {
 	// Парсим место рождения (ожидаем формат "City, CountryCode" или просто "City")
 	city, countryCode := parseBirthPlace(birthPlace)

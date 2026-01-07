@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:15-alpine
@@ -121,6 +119,39 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  app:
+    build:
+      context: ../..
+      dockerfile: deploy/Dockerfile
+    container_name: astro-bot-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      # Переопределяем хосты для работы внутри Docker сети
+      # В .env должны быть localhost, здесь переопределяем на имена сервисов
+      - TG_BOTS_POSTGRES_HOST=postgres
+      - TG_BOTS_KAFKA_0_CONFIG_BROKERS=kafka:29092
+      - TG_BOTS_KAFKA_1_CONFIG_BROKERS=kafka:29092
+    networks:
+      - astro-bot-network
+    restart: unless-stopped
+    healthcheck:
+      # Проверяем готовность через /ready endpoint
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
 volumes:
   postgres_data:

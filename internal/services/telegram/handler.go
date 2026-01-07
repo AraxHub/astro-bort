@@ -99,7 +99,7 @@ func IsCommand(text string) bool {
 }
 
 // HandleRAGResponse обрабатывает ответ от RAG - роутинг в usecase
-func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, botID domain.BotId, responseText string) error {
+func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, responseText string) error {
 	botType, err := s.GetBotType(botID)
 	if err != nil {
 		return fmt.Errorf("failed to get bot_type [bot_id=%s, request_id=%s]: %w",
@@ -112,7 +112,7 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 			botType, botID, requestID)
 	}
 
-	if err = botService.HandleRAGResponse(ctx, requestID, responseText); err != nil {
+	if err = botService.HandleRAGResponse(ctx, requestID, botID, chatID, responseText); err != nil {
 		return domain.WrapBusinessError(err)
 	}
 	return nil

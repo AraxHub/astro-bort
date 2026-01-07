@@ -12,11 +12,10 @@ import (
 )
 
 // HandleRAGResponse обрабатывает ответ от RAG
-func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, responseText string) (err error) {
+func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, responseText string) (err error) {
 	var statusStage domain.RequestStage
 	var statusErrorCode string
 	var statusMetadata json.RawMessage
-	var botID domain.BotId
 
 	defer func() {
 		if err != nil {
@@ -28,6 +27,7 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, re
 				string(botID),
 				map[string]interface{}{
 					"request_id": requestID.String(),
+					"chat_id":    chatID,
 				},
 			)
 
@@ -58,23 +58,8 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, re
 		}
 	}()
 
-	// Получаем запрос
-	req, err := s.RequestRepo.GetByID(ctx, requestID)
-	if err != nil {
-		statusStage = domain.StageGetRequest
-		statusErrorCode = "DB_QUERY_ERROR"
-		s.Log.Error("failed to get request by id",
-			"error", err,
-			"request_id", requestID,
-		)
-		return fmt.Errorf("failed to get request: %w", err)
-	}
-
-	botID = req.BotID
-
-	// Сохраняем ответ
-	req.ResponseText = responseText
-	if err = s.RequestRepo.UpdateResponseText(ctx, req); err != nil {
+	// Сохраняем ответ напрямую по request_id (без SELECT)
+	if err = s.RequestRepo.UpdateResponseTextByID(ctx, requestID, responseText); err != nil {
 		statusStage = domain.StageSaveResponse
 		statusErrorCode = "DB_UPDATE_ERROR"
 		s.Log.Error("failed to update request with response",
@@ -84,21 +69,8 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, re
 		return fmt.Errorf("failed to update request: %w", err)
 	}
 
-	// Получаем пользователя
-	user, err := s.UserRepo.GetByID(ctx, req.UserID)
-	if err != nil {
-		statusStage = domain.StageGetUser
-		statusErrorCode = "DB_QUERY_ERROR"
-		s.Log.Error("failed to get user by id",
-			"error", err,
-			"user_id", req.UserID,
-			"request_id", requestID,
-		)
-		return fmt.Errorf("failed to get user: %w", err)
-	}
-
-	// Отправляем сообщение
-	messageID, err := s.TelegramService.SendMessageWithID(ctx, req.BotID, user.TelegramChatID, responseText)
+	// Отправляем сообщение с bot_id и chat_id из Kafka (без SELECT User)
+	messageID, err := s.TelegramService.SendMessageWithID(ctx, botID, chatID, responseText)
 	if err != nil {
 		statusStage = domain.StageSendTelegram
 		statusErrorCode = "TELEGRAM_SEND_ERROR"
@@ -110,8 +82,8 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, re
 		s.Log.Error("failed to send RAG response to user",
 			"error", err,
 			"request_id", requestID,
-			"user_id", user.ID,
-			"bot_id", req.BotID,
+			"bot_id", botID,
+			"chat_id", chatID,
 		)
 		return fmt.Errorf("failed to send response: %w", err)
 	}
@@ -119,14 +91,16 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, re
 	// Успех - формируем metadata
 	statusMetadata = domain.BuildTelegramMetadata(
 		messageID,
-		user.TelegramChatID,
-		string(req.BotID),
+		chatID,
+		string(botID),
 		len(responseText),
 	)
 
 	s.Log.Info("RAG response sent to user",
 		"request_id", requestID,
 		"message_id", messageID,
+		"bot_id", botID,
+		"chat_id", chatID,
 	)
 
 	return nil

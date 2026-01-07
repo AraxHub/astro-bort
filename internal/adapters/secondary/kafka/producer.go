@@ -56,34 +56,52 @@ func NewProducer(cfg *Config, log *slog.Logger) (*Producer, error) {
 }
 
 // SendRAGRequest отправляет запрос в RAG и возвращает partition и offset
-func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botID domain.BotId, requestText string, natalChart []byte) (int32, int64, error) {
-	message := RAGRequestMessage{
-		RequestID:   requestID.String(),
-		BotID:       string(botID), // Конвертируем доменный тип в строку только для JSON
-		RequestText: requestText,
-		NatalChart:  string(natalChart),
+// В value передаётся request_text и натальный отчёт (raw JSON без экранирования), остальные поля - в headers
+func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, requestText string, natalReport domain.NatalReport) (int32, int64, error) {
+	var natalReportRaw json.RawMessage
+	if len(natalReport) > 0 {
+		if !json.Valid(natalReport) {
+			return 0, 0, fmt.Errorf("natal_report is not valid JSON")
+		}
+		natalReportRaw = json.RawMessage(natalReport)
 	}
 
-	value, err := json.Marshal(message)
+	valueData := map[string]interface{}{
+		"request_text": requestText,
+		"natal_chart":  natalReportRaw,
+	}
+	valueBytes, err := json.Marshal(valueData)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to marshal RAG request: %w", err)
+		return 0, 0, fmt.Errorf("failed to marshal value: %w", err)
 	}
 
 	msg := &sarama.ProducerMessage{
 		Topic: p.cfg.Topic,
 		Key:   sarama.StringEncoder(requestID.String()),
-		Value: sarama.ByteEncoder(value),
+		Value: sarama.ByteEncoder(valueBytes),
+		Headers: []sarama.RecordHeader{
+			{
+				Key:   []byte("request_id"),
+				Value: []byte(requestID.String()),
+			},
+			{
+				Key:   []byte("bot_id"),
+				Value: []byte(string(botID)),
+			},
+			{
+				Key:   []byte("chat_id"),
+				Value: []byte(fmt.Sprintf("%d", chatID)),
+			},
+		},
 	}
 
 	partition, offset, err := p.producer.SendMessage(msg)
 	if err != nil {
-		// Debug для технических деталей
 		p.log.Debug("kafka send failed",
 			"error", err,
 			"topic", p.cfg.Topic,
 			"key", requestID.String(),
 		)
-		// Оборачиваем с техническими деталями
 		return 0, 0, fmt.Errorf("kafka send failed [topic=%s, key=%s]: %w",
 			p.cfg.Topic, requestID.String(), err)
 	}
@@ -93,6 +111,7 @@ func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botI
 		"partition", partition,
 		"offset", offset,
 		"key", requestID.String(),
+		"chat_id", chatID,
 	)
 
 	return partition, offset, nil
@@ -136,12 +155,4 @@ func (p *Producer) Close() error {
 	}
 	p.log.Info("kafka producer closed")
 	return nil
-}
-
-// RAGRequestMessage структура сообщения для RAG
-type RAGRequestMessage struct {
-	RequestID   string `json:"request_id"`
-	BotID       string `json:"bot_id"` // ID бота для роутинга ответа
-	RequestText string `json:"request_text"`
-	NatalChart  string `json:"natal_chart"`
 }

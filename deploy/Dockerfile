@@ -23,8 +23,8 @@ FROM alpine:latest
 
 WORKDIR /app
 
-# Устанавливаем ca-certificates для HTTPS запросов
-RUN apk --no-cache add ca-certificates
+# Устанавливаем ca-certificates для HTTPS запросов и wget для healthcheck
+RUN apk --no-cache add ca-certificates wget
 
 # Копируем бинарник из builder stage
 COPY --from=builder /app/astro-bot .
