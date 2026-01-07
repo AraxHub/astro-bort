@@ -27,7 +27,7 @@ func NewProducer(cfg *Config, log *slog.Logger) (*Producer, error) {
 	config.Producer.Retry.Max = 5
 
 	// Настройка безопасности (если указано)
-	if cfg.SecurityProtocol == "SASL_SSL" {
+	if cfg.SecurityProtocol == "SASL_SSL" || cfg.SecurityProtocol == "SASL_PLAINTEXT" {
 		config.Net.SASL.Enable = true
 		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 		if cfg.SASLMechanism == "SCRAM-SHA-256" {
@@ -35,7 +35,10 @@ func NewProducer(cfg *Config, log *slog.Logger) (*Producer, error) {
 		}
 		config.Net.SASL.User = cfg.SASLUsername
 		config.Net.SASL.Password = cfg.SASLPassword
-		config.Net.TLS.Enable = true
+		// TLS только для SASL_SSL
+		if cfg.SecurityProtocol == "SASL_SSL" {
+			config.Net.TLS.Enable = true
+		}
 	}
 
 	producer, err := sarama.NewSyncProducer(cfg.GetBrokers(), config)

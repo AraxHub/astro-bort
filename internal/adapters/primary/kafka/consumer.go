@@ -28,7 +28,7 @@ func NewConsumer(cfg *kafkaAdapter.Config, handler kafkaPorts.MessageHandler, lo
 	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 
 	// Настройка безопасности (если указано)
-	if cfg.SecurityProtocol == "SASL_SSL" {
+	if cfg.SecurityProtocol == "SASL_SSL" || cfg.SecurityProtocol == "SASL_PLAINTEXT" {
 		config.Net.SASL.Enable = true
 		config.Net.SASL.Mechanism = sarama.SASLTypePlaintext
 		if cfg.SASLMechanism == "SCRAM-SHA-256" {
@@ -36,7 +36,10 @@ func NewConsumer(cfg *kafkaAdapter.Config, handler kafkaPorts.MessageHandler, lo
 		}
 		config.Net.SASL.User = cfg.SASLUsername
 		config.Net.SASL.Password = cfg.SASLPassword
-		config.Net.TLS.Enable = true
+		// TLS только для SASL_SSL
+		if cfg.SecurityProtocol == "SASL_SSL" {
+			config.Net.TLS.Enable = true
+		}
 	}
 
 	consumer, err := sarama.NewConsumerGroup(cfg.GetBrokers(), cfg.ConsumerGroup, config)
