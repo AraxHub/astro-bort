@@ -102,7 +102,6 @@ func (s *Service) GetNatalReport(ctx context.Context, birthDateTime time.Time, b
 		},
 	}
 
-	// Выполняем запрос
 	rawJSON, err := s.client.GetNatalReport(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get natal report: %w", err)
@@ -119,7 +118,7 @@ func parseBirthPlace(birthPlace string) (city, countryCode string) {
 	// Простой парсинг: если есть запятая, разделяем
 	// В реальности может потребоваться более сложная логика
 	if birthPlace == "" {
-		return "Unknown", "US" // Дефолтные значения
+		return "Unknown", "RU" // Дефолтные значения
 	}
 
 	// Пытаемся найти запятую
@@ -142,5 +141,5 @@ func parseBirthPlace(birthPlace string) (city, countryCode string) {
 	}
 
 	// Если запятой нет, используем весь текст как город
-	return birthPlace, "US" // Дефолтный код страны
+	return birthPlace, "RU" // Дефолтный код страны
 }

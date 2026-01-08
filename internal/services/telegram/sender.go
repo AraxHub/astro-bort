@@ -22,7 +22,6 @@ func (s *Service) SendMessageWithID(ctx context.Context, botID domain.BotId, cha
 
 	messageID, err := client.SendMessageWithID(ctx, chatID, text)
 	if err != nil {
-		// НЕ логируем здесь - UseCase залогирует с бизнес-контекстом
 		return 0, fmt.Errorf("failed to send message: %w", err)
 	}
 
@@ -65,10 +64,8 @@ func (s *Service) AnswerCallbackQuery(ctx context.Context, botID domain.BotId, c
 	}
 
 	if err := client.AnswerCallbackQuery(ctx, callbackID, text, showAlert); err != nil {
-		// НЕ логируем здесь - UseCase залогирует с бизнес-контекстом
 		return fmt.Errorf("failed to answer callback query: %w", err)
 	}
 
-	// Успех тоже не логируем - UseCase залогирует
 	return nil
 }

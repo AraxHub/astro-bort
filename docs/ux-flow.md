@@ -7,46 +7,68 @@ flowchart TD
     Start([Пользователь отправляет /start]) --> CheckBirthDate{Дата рождения<br/>установлена?}
     
     CheckBirthDate -->|Нет| ShowBirthWarning[Показать предупреждение:<br/>⚠️ Дата устанавливается ОДИН РАЗ<br/>Задавай вопросы только от своего лица]
-    ShowBirthWarning --> WaitBirthInput[Ожидание ввода даты:<br/>ДД.ММ.ГГГГ]
-    WaitBirthInput --> ValidateBirthDate{Валидация<br/>даты}
+    ShowBirthWarning --> WaitBirthInput[Ожидание ввода даты:<br/>ДД.ММ.ГГГГ чч:мм Город<br/>или<br/>ДД.ММ.ГГГГ чч:мм Город, КодСтраны]
+    WaitBirthInput --> ValidateBirthDate{Валидация<br/>даты, времени<br/>и места}
     
-    ValidateBirthDate -->|Неверный формат| ShowError[Показать ошибку:<br/>❌ Неверный формат<br/>Введи ДД.ММ.ГГГГ]
+    ValidateBirthDate -->|Неверный формат| ShowError[Показать ошибку:<br/>❌ Неверный формат<br/>Используй: ДД.ММ.ГГГГ чч:мм Город]
     ShowError --> WaitBirthInput
     
-    ValidateBirthDate -->|Верный формат| SaveBirthDate[Сохранить дату рождения<br/>birth_data_set_at = NOW<br/>birth_data_can_change_until = NOW + 24h]
-    SaveBirthDate --> ShowBirthSuccess[Показать:<br/>✅ Дата установлена<br/>⚠️ Можно изменить в течение 24ч]
-    
-    CheckBirthDate -->|Да| CheckNatalChart{Натальная карта<br/>есть?}
-    ShowBirthSuccess --> CheckNatalChart
-    
-    CheckNatalChart -->|Нет| RequestNatalChart[Запрос в астро-API<br/>с датой рождения]
+    ValidateBirthDate -->|Верный формат| SaveBirthDate[Сохранить дату рождения:<br/>birth_datetime = дата+время<br/>birth_place = место<br/>birth_data_set_at = NOW<br/>birth_data_can_change_until = NOW + 24h]
+    SaveBirthDate --> RequestNatalChart[Запрос в астро-API<br/>для получения натальной карты]
     RequestNatalChart --> SaveNatalChart{Успешно?}
     
-    SaveNatalChart -->|Ошибка| ShowNatalError[Показать ошибку:<br/>❌ Не удалось получить<br/>натальную карту]
-    ShowNatalError --> EndError([Ошибка])
+    SaveNatalChart -->|Ошибка| ShowNatalErrorAfterSave[Показать:<br/>✅ Данные приняты<br/>❌ Не удалось рассчитать карту]
+    ShowNatalErrorAfterSave --> WaitUserQuestion
     
-    SaveNatalChart -->|Успешно| SaveNatalChartDB[Сохранить натальную карту<br/>natal_chart = данные<br/>natal_chart_fetched_at = NOW]
-    SaveNatalChartDB --> ShowReady[Показать:<br/>✅ Натальная карта получена!<br/>Готов к работе]
+    SaveNatalChart -->|Успешно| SaveNatalChartDB[Сохранить натальную карту:<br/>natal_chart = данные<br/>natal_chart_fetched_at = NOW]
+    SaveNatalChartDB --> ShowBirthSuccess[Показать:<br/>🎉 Готово! Натальная карта рассчитана!<br/>✅ Данные сохранены<br/>⚠️ Можно изменить в течение 24ч]
+    ShowBirthSuccess --> WaitUserQuestion
+    
+    CheckBirthDate -->|Да| CheckNatalChart{Натальная карта<br/>есть?<br/>NatalChartFetchedAt != nil}
+    
+    CheckNatalChart -->|Нет| RequestNatalChartStart[Запрос в астро-API<br/>для получения натальной карты]
+    RequestNatalChartStart --> SaveNatalChartStart{Успешно?}
+    
+    SaveNatalChartStart -->|Ошибка| ShowNatalError[Показать ошибку:<br/>❌ Не удалось рассчитать<br/>натальную карту]
+    ShowNatalError --> WaitUserQuestion
+    
+    SaveNatalChartStart -->|Успешно| ShowReady[Показать:<br/>🐱 Привет снова!<br/>Натальная карта рассчитана,<br/>готов к работе]
     
     CheckNatalChart -->|Да| ShowReady
     
     ShowReady --> WaitUserQuestion[Ожидание вопроса<br/>от пользователя]
     
-    WaitUserQuestion --> CreateRequest[Создать запрос:<br/>requests: user_id, request_text<br/>status: 'received']
+    WaitUserQuestion --> CreateRequest[Создать запрос:<br/>requests: user_id, request_text, tg_update_id<br/>status: создаётся через defer]
     
-    CreateRequest --> CheckNatalChartAgain{Натальная карта<br/>есть?}
+    CreateRequest --> CheckNatalChartAgain{Натальная карта<br/>есть?<br/>NatalChartFetchedAt != nil}
     
-    CheckNatalChartAgain -->|Нет| RequestNatalChart
+    CheckNatalChartAgain -->|Нет| RequestNatalChartOnQuestion[Запрос в астро-API<br/>для получения натальной карты]
+    RequestNatalChartOnQuestion --> SaveNatalChartOnQuestion{Успешно?}
     
-    CheckNatalChartAgain -->|Да| SendToKafka[Отправить в Kafka:<br/>request_id, request_text, natal_chart<br/>status: 'sent_to_rag']
+    SaveNatalChartOnQuestion -->|Ошибка| ShowNatalErrorOnQuestion[Показать ошибку:<br/>❌ Натальная карта не найдена<br/>Используй /start]
+    ShowNatalErrorOnQuestion --> WaitUserQuestion
     
-    SendToKafka --> WaitRAGResponse[Ожидание ответа<br/>из Kafka топика]
+    SaveNatalChartOnQuestion -->|Успешно| GetNatalChart[Получить натальную карту<br/>из БД: GetNatalChart]
     
-    WaitRAGResponse --> ReceiveRAGResponse[Получить ответ из Kafka:<br/>request_id, response_text<br/>status: 'rag_response_received']
+    CheckNatalChartAgain -->|Да| GetNatalChart
     
-    ReceiveRAGResponse --> FindUserChat[Найти пользователя:<br/>SELECT u.telegram_chat_id<br/>FROM requests r<br/>JOIN users u ON r.user_id = u.id<br/>WHERE r.id = request_id]
+    GetNatalChart --> CheckChartNotEmpty{Карта<br/>не пустая?}
     
-    FindUserChat --> SendToUser[Отправить ответ пользователю:<br/>chat_id = telegram_chat_id<br/>status: 'sent_to_user']
+    CheckChartNotEmpty -->|Пустая| RequestNatalChartOnQuestion
+    
+    CheckChartNotEmpty -->|Есть| SendToKafka[Отправить в Kafka:<br/>request_id, request_text, natal_chart<br/>headers: bot_id, chat_id<br/>status: 'sent_to_rag']
+    
+    SendToKafka --> SendConfirmation[Отправить сообщение пользователю:<br/>✅ Запрос получен<br/>Обрабатываю...]
+    
+    SendConfirmation --> WaitRAGResponse[Ожидание ответа<br/>из Kafka топика responses]
+    
+    WaitRAGResponse --> ReceiveRAGResponse[Получить ответ из Kafka:<br/>топик: responses<br/>данные: request_id, bot_id, chat_id, response_text]
+    
+    ReceiveRAGResponse --> UpdateRequest[Обновить запрос в БД:<br/>requests.response = response_text]
+    
+    UpdateRequest --> CreateStatusSuccess[Создать статус:<br/>status = 'completed'<br/>metadata = telegram metadata]
+    
+    CreateStatusSuccess --> SendToUser[Отправить ответ пользователю:<br/>chat_id из Kafka сообщения<br/>status: 'sent_to_user']
     
     SendToUser --> WaitUserQuestion
     
@@ -58,15 +80,16 @@ flowchart TD
     CheckResetTime -->|Да| ShowResetWarning[Показать:<br/>⚠️ Ты уверен?<br/>Это удалит дату и натальную карту<br/>Введи 'ПОДТВЕРДИТЬ']
     ShowResetWarning --> WaitConfirm[Ожидание подтверждения]
     
-    WaitConfirm -->|'ПОДТВЕРДИТЬ'| ResetBirthData[Сбросить:<br/>birth_date = NULL<br/>natal_chart = NULL<br/>birth_data_set_at = NULL]
-    ResetBirthData --> WaitBirthInput
+    WaitConfirm -->|'ПОДТВЕРДИТЬ'| ResetBirthData[Сбросить:<br/>birth_datetime = NULL<br/>birth_place = NULL<br/>birth_data_set_at = NULL<br/>birth_data_can_change_until = NULL<br/>natal_chart_fetched_at = NULL<br/>natal_chart остаётся в БД<br/>но не используется]
+    ResetBirthData --> ShowResetSuccess[Показать:<br/>✅ Дата и карта сброшены<br/>Введи новые данные]
+    ShowResetSuccess --> WaitBirthInput
     
     WaitConfirm -->|Другое| WaitUserQuestion
     
     WaitUserQuestion -->|Команда /help| ShowHelp[Показать справку:<br/>/start - Начать<br/>/reset_birth_data - Сбросить дату<br/>/my_info - Моя информация]
     ShowHelp --> WaitUserQuestion
     
-    WaitUserQuestion -->|Команда /my_info| ShowUserInfo[Показать:<br/>Дата рождения: birth_date<br/>Натальная карта: ✅/❌]
+    WaitUserQuestion -->|Команда /my_info| ShowUserInfo[Показать:<br/>Дата рождения: birth_datetime<br/>Место рождения: birth_place<br/>Натальная карта: ✅/❌<br/>Проверяется реальное наличие<br/>в БД через GetNatalChart]
     ShowUserInfo --> WaitUserQuestion
     
     style Start fill:#90EE90
@@ -86,8 +109,10 @@ flowchart TD
 
 ### 2. Установка даты рождения
 - Если даты нет → запрос с предупреждением
-- Валидация формата (ДД.ММ.ГГГГ)
+- Формат ввода: `ДД.ММ.ГГГГ чч:мм Город, КодСтраны` или `ДД.ММ.ГГГГ чч:мм Город`
+- Валидация формата даты, времени и места рождения
 - Сохранение с ограничением на изменение (24 часа)
+- После сохранения автоматически запрашивается натальная карта из астро-API
 
 ### 3. Получение натальной карты
 - Проверка наличия натальной карты
@@ -96,10 +121,14 @@ flowchart TD
 
 ### 4. Основной режим работы
 - Ожидание вопросов от пользователя
+- Проверка наличия натальной карты (если нет - попытка загрузить)
+- Получение натальной карты из БД (lazy loading)
 - Создание запроса в БД
-- Отправка в Kafka для RAG
-- Получение ответа из Kafka
+- Отправка в Kafka топик `requests` (request_id, request_text, natal_chart, headers: bot_id, chat_id)
+- Получение ответа из Kafka топика `responses`
+- Обновление запроса в БД (сохранение response_text)
 - Отправка ответа пользователю
+- После успешной отправки в Kafka отправляется сообщение "✅ Запрос получен\nОбрабатываю..."
 
 ### 5. Дополнительные команды
 - `/reset_birth_data` - сброс даты (только в течение 24 часов)

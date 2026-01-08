@@ -107,7 +107,6 @@ func (s *Service) handleBirthDateInput(ctx context.Context, botID domain.BotId, 
 				"`15.03.1990 14:30 Москва, RU`")
 	}
 
-	// Парсим дату и время
 	birthDateTime, err := s.parseBirthDateTime(parts[0], parts[1])
 	if err != nil {
 		return s.sendMessage(ctx, botID, user.TelegramChatID,
@@ -203,8 +202,8 @@ func (s *Service) parseBirthDateTime(dateStr, timeStr string) (time.Time, error)
 		date.Day(),
 		timePart.Hour(),
 		timePart.Minute(),
-		0,        // секунды = 0
-		0,        // наносекунды = 0
+		0,
+		0,
 		time.UTC, // используем UTC, так как место рождения будет использовано для расчёта временной зоны
 	)
 
@@ -389,10 +388,6 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		)
 	}
 
-	/*
-		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"✅ Запрос получен\nОбрабатываю...")
-	*/
-	//todo rollback after load test
-	return nil
+	return s.sendMessage(ctx, botID, user.TelegramChatID,
+		"✅ Запрос получен\nОбрабатываю...")
 }
