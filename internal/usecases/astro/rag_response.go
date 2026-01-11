@@ -31,7 +31,7 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 				},
 			)
 
-			s.createOrLogStatus(ctx, &domain.Status{
+			status := &domain.Status{
 				ID:           uuid.New(),
 				ObjectType:   domain.ObjectTypeRequest,
 				ObjectID:     requestID,
@@ -39,22 +39,25 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 				ErrorMessage: &errMsg,
 				Metadata:     metadata,
 				CreatedAt:    time.Now(),
-			})
+			}
+			s.createOrLogStatus(ctx, status)
+			s.sendAlertOrLog(ctx, status)
 		} else {
-			// Успех - создаём финальный статус
+			// Успех - создаём финальный статус (алерт не отправляем для успешных кейсов)
 			if statusMetadata == nil {
 				// Если metadata не был установлен, не создаём статус
 				return
 			}
 
-			s.createOrLogStatus(ctx, &domain.Status{
+			status := &domain.Status{
 				ID:         uuid.New(),
 				ObjectType: domain.ObjectTypeRequest,
 				ObjectID:   requestID,
 				Status:     domain.RequestCompleted,
 				Metadata:   statusMetadata,
 				CreatedAt:  time.Now(),
-			})
+			}
+			s.createOrLogStatus(ctx, status)
 		}
 	}()
 

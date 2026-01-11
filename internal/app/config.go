@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	server "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http"
+	alerterAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/alerter"
 	astroApi "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
 	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
@@ -22,6 +23,7 @@ type Config struct {
 	AstroAPI *astroApi.Config          `envconfig:"ASTRO_API"`
 	Bots     BotsConfig                `envconfig:"BOTS"`
 	Kafka    kafkaAdapter.KafkaConfigs `envconfig:"KAFKA"`
+	Alerter  *alerterAdapter.Config    `envconfig:"ALERTER"`
 }
 
 // BotsConfig конфигурация ботов

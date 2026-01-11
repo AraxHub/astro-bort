@@ -268,7 +268,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 				)
 			}
 
-			s.createOrLogStatus(ctx, &domain.Status{
+			status := &domain.Status{
 				ID:           uuid.New(),
 				ObjectType:   domain.ObjectTypeRequest,
 				ObjectID:     requestID,
@@ -276,21 +276,25 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 				ErrorMessage: &errMsg,
 				Metadata:     statusMetadata,
 				CreatedAt:    time.Now(),
-			})
+			}
+
+			s.createOrLogStatus(ctx, status)
+			s.sendAlertOrLog(ctx, status)
 		} else {
 			// успех отправки
 			if statusMetadata == nil {
 				return
 			}
 
-			s.createOrLogStatus(ctx, &domain.Status{
+			status := &domain.Status{
 				ID:         uuid.New(),
 				ObjectType: domain.ObjectTypeRequest,
 				ObjectID:   requestID,
 				Status:     domain.RequestSentToRAG,
 				Metadata:   statusMetadata,
 				CreatedAt:  time.Now(),
-			})
+			}
+			s.createOrLogStatus(ctx, status)
 		}
 	}()
 
@@ -303,9 +307,13 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 				"error", err,
 				"user_id", user.ID,
 			)
-			return s.sendMessage(ctx, botID, user.TelegramChatID,
+			originalErr := err
+			if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID,
 				"❌ Натальная карта не найдена\n"+
-					"Используй /start для настройки")
+					"Используй /start для настройки"); sendErr != nil {
+				s.Log.Warn("failed to notify user about error", "error", sendErr)
+			}
+			return originalErr
 		}
 	}
 
@@ -328,7 +336,11 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 			"user_id", user.ID,
 			"update_id", updateID,
 		)
-		return s.sendMessage(ctx, botID, user.TelegramChatID, "❌ Ошибка при создании запроса")
+		originalErr := err
+		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, "❌ Ошибка при создании запроса"); sendErr != nil {
+			s.Log.Warn("failed to notify user about error", "error", sendErr)
+		}
+		return originalErr
 	}
 
 	requestID = request.ID
@@ -344,8 +356,12 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 			"user_id", user.ID,
 			"request_id", requestID,
 		)
-		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"❌ Ошибка при получении натального отчёта\nПопробуй позже или используй /start")
+		originalErr := err
+		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID,
+			"❌ Ошибка при получении натального отчёта\nПопробуй позже или используй /start"); sendErr != nil {
+			s.Log.Warn("failed to notify user about error", "error", sendErr)
+		}
+		return originalErr
 	}
 
 	if s.KafkaProducer != nil {
@@ -363,8 +379,12 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 				"request_id", requestID,
 				"user_id", user.ID,
 			)
-			return s.sendMessage(ctx, botID, user.TelegramChatID,
-				"❌ Ошибка при отправке запроса\nПопробуй позже")
+			originalErr := err
+			if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID,
+				"❌ Ошибка при отправке запроса\nПопробуй позже"); sendErr != nil {
+				s.Log.Warn("failed to notify user about error", "error", sendErr)
+			}
+			return originalErr
 		}
 
 		// успех отправки

@@ -6,11 +6,13 @@ import (
 	"net/http"
 
 	server "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http"
+	alerterController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/alerter"
 	healthcheckController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/healthcheck"
 	telegramController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/telegram"
 	testController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/test"
 	kafkaConsumerAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/kafka"
 	kafkaHandlers "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/kafka/handlers"
+	alerterAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/alerter"
 	astroApiAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
 	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
@@ -22,6 +24,7 @@ import (
 	statusRepo "github.com/admin/tg-bots/astro-bot/internal/repository/status"
 	testRepo "github.com/admin/tg-bots/astro-bot/internal/repository/test"
 	userRepo "github.com/admin/tg-bots/astro-bot/internal/repository/user"
+	alerterService "github.com/admin/tg-bots/astro-bot/internal/services/alerter"
 	astroApiService "github.com/admin/tg-bots/astro-bot/internal/services/astroApi"
 	telegramService "github.com/admin/tg-bots/astro-bot/internal/services/telegram"
 	astroUsecase "github.com/admin/tg-bots/astro-bot/internal/usecases/astro"
@@ -95,6 +98,13 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	)
 	astroAPIService := astroApiService.New(astroAPIClient)
 
+	// Инициализируем алертер (опционально)
+	var alerterSvc service.IAlerterService
+	if a.Cfg.Alerter != nil {
+		alerterClient := alerterAdapter.NewClient(a.Cfg.Alerter, a.Log)
+		alerterSvc = alerterService.New(alerterClient)
+	}
+
 	// Инициализируем Kafka producers
 	kafkaProducers := make(map[string]*kafkaAdapter.Producer)
 	var ragProducer *kafkaAdapter.Producer
@@ -116,7 +126,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		}
 	}
 
-	// Создаём UseCase с Telegram Service, Astro API Service и Kafka Producer
+	// Создаём UseCase с Telegram Service, Astro API Service, Kafka Producer и Alerter
 	astroUseCase := astroUsecase.New(
 		userRepo,
 		requestRepo,
@@ -124,6 +134,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		tgService,
 		astroAPIService,
 		ragProducer, // может быть nil, если не настроен
+		alerterSvc,  // может быть nil, если не настроен
 		a.Log,
 	)
 
@@ -139,12 +150,22 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	testController := testController.New(testService, a.Log)
 	telegramController := telegramController.New(tgService, a.Log)
 
-	httpServer := server.NewHTTPServer(
-		a.Cfg.Server,
-		a.Log,
+	// Создаём контроллеры для HTTP сервера
+	controllers := []server.Controller{
 		healthCheck,
 		testController,
 		telegramController,
+	}
+
+	// Добавляем контроллер алертера, если сервис настроен
+	if alerterSvc != nil {
+		controllers = append(controllers, alerterController.New(alerterSvc, a.Log))
+	}
+
+	httpServer := server.NewHTTPServer(
+		a.Cfg.Server,
+		a.Log,
+		controllers...,
 	)
 
 	// Инициализируем webhook или polling

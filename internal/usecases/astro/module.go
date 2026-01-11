@@ -18,6 +18,7 @@ type Service struct {
 	TelegramService service.ITelegramService
 	AstroAPIService service.IAstroAPIService
 	KafkaProducer   kafka.IKafkaProducer
+	AlerterService  service.IAlerterService
 	Log             *slog.Logger
 }
 
@@ -28,6 +29,7 @@ func New(
 	telegramService service.ITelegramService,
 	astroAPIService service.IAstroAPIService,
 	kafkaProducer kafka.IKafkaProducer,
+	alerterService service.IAlerterService,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
@@ -37,6 +39,7 @@ func New(
 		TelegramService: telegramService,
 		AstroAPIService: astroAPIService,
 		KafkaProducer:   kafkaProducer,
+		AlerterService:  alerterService,
 		Log:             log,
 	}
 }
