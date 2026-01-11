@@ -43,9 +43,9 @@ type RailwayProject struct {
 
 // RailwayEnvironment информация о окружении
 type RailwayEnvironment struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	IsEphemeral bool  `json:"isEphemeral"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	IsEphemeral bool   `json:"isEphemeral"`
 }
 
 // RailwayService информация о сервисе
@@ -58,4 +58,3 @@ type RailwayService struct {
 type RailwayDeployment struct {
 	ID string `json:"id"`
 }
-

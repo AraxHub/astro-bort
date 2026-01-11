@@ -47,10 +47,11 @@ func NewClient(token string, log *slog.Logger) *Client {
 
 // SendMessageRequest запрос на отправку сообщения
 type SendMessageRequest struct {
-	ChatID      int64                  `json:"chat_id"`
-	Text        string                 `json:"text"`
-	ParseMode   string                 `json:"parse_mode,omitempty"` // "HTML", "Markdown", "MarkdownV2"
-	ReplyMarkup map[string]interface{} `json:"reply_markup,omitempty"`
+	ChatID          int64                  `json:"chat_id"`
+	Text            string                 `json:"text"`
+	ParseMode       string                 `json:"parse_mode,omitempty"` // "HTML", "Markdown", "MarkdownV2"
+	ReplyMarkup     map[string]interface{} `json:"reply_markup,omitempty"`
+	MessageThreadID *int64                 `json:"message_thread_id,omitempty"` // ID топика форума
 }
 
 // ChatInfo информация о чате
@@ -110,6 +111,11 @@ func (c *Client) SendMessageWithKeyboard(ctx context.Context, chatID int64, text
 
 	_, err := c.sendMessage(ctx, req)
 	return err
+}
+
+// SendMessageWithRequest отправляет сообщение с кастомным запросом (для поддержки message_thread_id и других параметров)
+func (c *Client) SendMessageWithRequest(ctx context.Context, req SendMessageRequest) (int64, error) {
+	return c.sendMessage(ctx, req)
 }
 
 // sendMessage выполняет запрос к Telegram API для отправки сообщения и возвращает messageID

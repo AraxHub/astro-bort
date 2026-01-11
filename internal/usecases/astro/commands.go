@@ -99,7 +99,7 @@ func (s *Service) HandleMyInfo(ctx context.Context, botID domain.BotId, user *do
 	} else if len(natalReport) > 0 {
 		message.WriteString("✨ Натальная карта: ✅\n")
 		if user.NatalChartFetchedAt != nil {
-			message.WriteString(fmt.Sprintf("   Получена: %s\n", user.NatalChartFetchedAt.Format("02.01.2006 15:04")))
+		message.WriteString(fmt.Sprintf("   Получена: %s\n", user.NatalChartFetchedAt.Format("02.01.2006 15:04")))
 		}
 	} else {
 		message.WriteString("✨ Натальная карта: ❌ (не установлена)\n")
