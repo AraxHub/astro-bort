@@ -16,8 +16,10 @@ import (
 	astroApiAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
 	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
+	redisAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/redis"
 	tgAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
+	"github.com/admin/tg-bots/astro-bot/internal/ports/cache"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
 	requestRepo "github.com/admin/tg-bots/astro-bot/internal/repository/request"
@@ -26,6 +28,7 @@ import (
 	userRepo "github.com/admin/tg-bots/astro-bot/internal/repository/user"
 	alerterService "github.com/admin/tg-bots/astro-bot/internal/services/alerter"
 	astroApiService "github.com/admin/tg-bots/astro-bot/internal/services/astroApi"
+	jobScheduler "github.com/admin/tg-bots/astro-bot/internal/services/jobs"
 	telegramService "github.com/admin/tg-bots/astro-bot/internal/services/telegram"
 	astroUsecase "github.com/admin/tg-bots/astro-bot/internal/usecases/astro"
 	testService "github.com/admin/tg-bots/astro-bot/internal/usecases/test"
@@ -40,6 +43,8 @@ type Dependencies struct {
 	TelegramPoller  *tgAdapter.Poller
 	KafkaProducers  map[string]*kafkaAdapter.Producer
 	KafkaConsumers  map[string]*kafkaConsumerAdapter.Consumer
+	Cache           cache.Cache
+	JobScheduler    *jobScheduler.Scheduler
 }
 
 func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
@@ -105,6 +110,20 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		alerterSvc = alerterService.New(alerterClient)
 	}
 
+	// Инициализируем Redis кэш (опционально)
+	var cacheClient cache.Cache
+	if a.Cfg.Redis != nil {
+		redisClient, err := a.Cfg.Redis.NewConnection()
+		if err != nil {
+			a.Log.Warn("failed to init redis cache, continuing without cache",
+				"error", err,
+			)
+		} else {
+			cacheClient = redisAdapter.NewClient(redisClient)
+			a.Log.Info("redis cache connected successfully")
+		}
+	}
+
 	// Инициализируем Kafka producers
 	kafkaProducers := make(map[string]*kafkaAdapter.Producer)
 	var ragProducer *kafkaAdapter.Producer
@@ -126,7 +145,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		}
 	}
 
-	// Создаём UseCase с Telegram Service, Astro API Service, Kafka Producer и Alerter
+	// Создаём UseCase с Telegram Service, Astro API Service, Kafka Producer, Alerter и Cache
 	astroUseCase := astroUsecase.New(
 		userRepo,
 		requestRepo,
@@ -135,6 +154,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		astroAPIService,
 		ragProducer, // может быть nil, если не настроен
 		alerterSvc,  // может быть nil, если не настроен
+		cacheClient, // может быть nil, если не настроен
 		a.Log,
 	)
 
@@ -210,6 +230,16 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		}
 	}
 
+	// Инициализируем планировщик джоб
+	scheduler := jobScheduler.NewScheduler(a.Log)
+
+	// Регистрируем джобу для обновления позиций планет (только если есть кеш)
+	if cacheClient != nil {
+		positionsUpdater := jobScheduler.NewPositionsUpdater(astroUseCase, a.Log)
+		scheduler.Register(positionsUpdater)
+		a.Log.Info("positions updater job registered")
+	}
+
 	return &Dependencies{
 		DB:              db,
 		HTTPServer:      httpServer,
@@ -218,6 +248,8 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		TelegramPoller:  poller,
 		KafkaProducers:  kafkaProducers,
 		KafkaConsumers:  kafkaConsumers,
+		Cache:           cacheClient,
+		JobScheduler:    scheduler,
 	}, nil
 }
 

@@ -120,6 +120,46 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: astro-bot-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - astro-bot-network
+    environment:
+      REDIS_PASSWORD: ${TG_BOTS_REDIS_PASSWORD:-redis123}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    command: sh -c "redis-server --appendonly yes --requirepass $${REDIS_PASSWORD}"
+
+  redis-insight:
+    image: redis/redisinsight:latest
+    container_name: astro-bot-redis-insight
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5540:5540"
+    environment:
+      RI_APP_PORT: "5540"
+      RI_APP_HOST: "0.0.0.0"
+    volumes:
+      - redisinsight_data:/db
+    networks:
+      - astro-bot-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5540/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
   app:
     build:
       context: ../..
@@ -132,6 +172,8 @@ services:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     ports:
       - "8080:8080"
     env_file:
@@ -142,6 +184,7 @@ services:
       - TG_BOTS_POSTGRES_HOST=postgres
       - TG_BOTS_KAFKA_0_CONFIG_BROKERS=kafka:29092
       - TG_BOTS_KAFKA_1_CONFIG_BROKERS=kafka:29092
+      - TG_BOTS_REDIS_HOST=redis
     networks:
       - astro-bot-network
     restart: unless-stopped
@@ -156,6 +199,8 @@ services:
 volumes:
   postgres_data:
   kafka_data:
+  redis_data:
+  redisinsight_data:
 
 networks:
   astro-bot-network:

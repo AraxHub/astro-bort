@@ -8,6 +8,7 @@ import (
 	astroApi "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
 	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
+	redisAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/redis"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
 	"github.com/admin/tg-bots/astro-bot/internal/pkg/logger"
@@ -17,6 +18,7 @@ import (
 
 type Config struct {
 	Postgres *pg.Config                `envconfig:"POSTGRES"`
+	Redis    *redisAdapter.Config      `envconfig:"REDIS"`
 	Log      *logger.Config            `envconfig:"LOG"`
 	Server   *server.Config            `envconfig:"APISERVER"`
 	Telegram *telegram.Config          `envconfig:"TELEGRAM"`

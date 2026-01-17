@@ -111,6 +111,49 @@ func (s *Service) GetNatalReport(ctx context.Context, birthDateTime time.Time, b
 	return domain.NatalReport(rawJSON), nil
 }
 
+// GetPositions получает актуальные позиции планет для указанной даты/времени.
+// Все позиции рассчитываются для Москвы (Moscow, RU) для унификации.
+// Примечание: использует BirthData структуру для API, но это просто дата/время и место, не обязательно дата рождения
+func (s *Service) GetPositions(ctx context.Context, dateTime time.Time) (string, error) {
+	city := "Moscow"
+	countryCode := "RU"
+
+	dateData := astroApiAdapter.BirthData{
+		Year:        dateTime.Year(),
+		Month:       int(dateTime.Month()),
+		Day:         dateTime.Day(),
+		Hour:        dateTime.Hour(),
+		Minute:      dateTime.Minute(),
+		Second:      dateTime.Second(),
+		City:        city,
+		CountryCode: countryCode,
+	}
+
+	req := astroApiAdapter.PositionsRequest{
+		Subject: astroApiAdapter.Person{
+			Name:      "Current",
+			BirthData: dateData,
+		},
+		Options: astroApiAdapter.PositionsOptions{
+			HouseSystem:  "P", // Плацидус
+			ZodiacType:   "Tropic",
+			ActivePoints: []string{"Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn", "Uranus", "Neptune", "Pluto"},
+			Precision:    2,
+		},
+	}
+
+	resp, err := s.client.GetPositions(ctx, req)
+	if err != nil {
+		return "", fmt.Errorf("failed to get positions: %w", err)
+	}
+
+	if resp.RawJSON == "" {
+		return "", fmt.Errorf("astro API returned empty response")
+	}
+
+	return resp.RawJSON, nil
+}
+
 // todo рефактор работы с городами
 // parseBirthPlace парсит место рождения на город и код страны
 // Ожидаемые форматы: "City, CountryCode" или "City" (тогда используем дефолтный код)

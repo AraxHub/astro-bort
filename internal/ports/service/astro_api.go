@@ -11,4 +11,5 @@ import (
 type IAstroAPIService interface {
 	CalculateNatalChart(ctx context.Context, birthDateTime time.Time, birthPlace string) (domain.NatalChart, error)
 	GetNatalReport(ctx context.Context, birthDateTime time.Time, birthPlace string) (domain.NatalReport, error)
+	GetPositions(ctx context.Context, dateTime time.Time) (string, error)
 }

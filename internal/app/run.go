@@ -45,6 +45,14 @@ func (a *App) runServices(ctx context.Context, deps *Dependencies) error {
 		})
 	}
 
+	// Запускаем планировщик джоб (запускает горутины внутри, сам не блокирует)
+	if deps.JobScheduler != nil {
+		a.Log.Info("starting job scheduler")
+		if err := deps.JobScheduler.Start(gCtx); err != nil {
+			a.Log.Error("failed to start job scheduler", "error", err)
+		}
+	}
+
 	// Graceful shutdown
 	g.Go(func() error {
 		<-gCtx.Done()
@@ -59,6 +67,13 @@ func (a *App) runServices(ctx context.Context, deps *Dependencies) error {
 
 		if err := deps.DB.Close(); err != nil {
 			a.Log.Error("failed to close database", "error", err)
+		}
+
+		// Закрываем Redis кэш
+		if deps.Cache != nil {
+			if err := deps.Cache.Close(); err != nil {
+				a.Log.Error("failed to close cache", "error", err)
+			}
 		}
 
 		// Закрываем Kafka producers

@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
+	"github.com/admin/tg-bots/astro-bot/internal/ports/cache"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/repository"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
@@ -19,6 +20,7 @@ type Service struct {
 	AstroAPIService service.IAstroAPIService
 	KafkaProducer   kafka.IKafkaProducer
 	AlerterService  service.IAlerterService
+	Cache           cache.Cache
 	Log             *slog.Logger
 }
 
@@ -30,6 +32,7 @@ func New(
 	astroAPIService service.IAstroAPIService,
 	kafkaProducer kafka.IKafkaProducer,
 	alerterService service.IAlerterService,
+	cache cache.Cache,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
@@ -40,6 +43,7 @@ func New(
 		AstroAPIService: astroAPIService,
 		KafkaProducer:   kafkaProducer,
 		AlerterService:  alerterService,
+		Cache:           cache,
 		Log:             log,
 	}
 }
