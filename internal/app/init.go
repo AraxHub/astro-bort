@@ -21,6 +21,7 @@ import (
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/cache"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
+	"github.com/admin/tg-bots/astro-bot/internal/ports/repository"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
 	requestRepo "github.com/admin/tg-bots/astro-bot/internal/repository/request"
 	statusRepo "github.com/admin/tg-bots/astro-bot/internal/repository/status"
@@ -47,198 +48,37 @@ type Dependencies struct {
 	JobScheduler    *jobScheduler.Scheduler
 }
 
+// initDependencies инициализирует все зависимости приложения
 func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	db, err := a.initPostgres()
 	if err != nil {
 		return nil, fmt.Errorf("failed to init postgres: %w", err)
 	}
 
-	persistenceLayer := pg.NewDB(db)
-
-	userRepo := userRepo.New(persistenceLayer, a.Log)
-	requestRepo := requestRepo.New(persistenceLayer, a.Log)
-	statusRepo := statusRepo.New(persistenceLayer, a.Log)
-	testRepo := testRepo.New(persistenceLayer, a.Log)
-
-	if len(a.Cfg.Bots.List) == 0 {
-		return nil, fmt.Errorf("no bots configured: at least one bot must be specified via BOTS_COUNT and BOTS_0_* environment variables")
+	repos := a.initRepositories(db)
+	telegramClients, tgService, err := a.initTelegram(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init telegram: %w", err)
 	}
 
-	botIDToType := make(map[domain.BotId]domain.BotType)
-	telegramClients := make(map[domain.BotId]*tgAdapter.Client)
-
-	for i, botCfg := range a.Cfg.Bots.List {
-		botID, botType, err := botCfg.ToDomain()
-		if err != nil {
-			return nil, fmt.Errorf("failed to convert bot config at index %d: %w", i, err)
-		}
-
-		botIDToType[botID] = botType
-		telegramClients[botID] = tgAdapter.NewClient(botCfg.BotToken, a.Log)
-
-		// Регистрируем команды для каждого бота
-		if err := a.registerBotCommands(ctx, telegramClients[botID]); err != nil {
-			a.Log.Warn("failed to register bot commands",
-				"error", err,
-				"bot_id", botID,
-			)
-		}
+	externalServices := a.initExternalServices()
+	kafkaProducers, kafkaConsumers, err := a.initKafka(ctx, tgService)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init kafka: %w", err)
 	}
 
-	tgService := telegramService.New(
-		botIDToType,
-		make(map[domain.BotType]service.IBotService), // botServices будет заполнен после создания UseCase
-		telegramClients,
-		a.Log,
-	)
-
-	// Инициализируем астро-API клиент и сервис
-	if a.Cfg.AstroAPI == nil {
-		return nil, fmt.Errorf("astro API configuration is required: set TG_BOTS_ASTRO_API_* environment variables")
-	}
-
-	astroAPIClient := astroApiAdapter.NewClient(
-		a.Cfg.AstroAPI,
-		a.Log,
-	)
-	astroAPIService := astroApiService.New(astroAPIClient)
-
-	// Инициализируем алертер (опционально)
-	var alerterSvc service.IAlerterService
-	if a.Cfg.Alerter != nil {
-		alerterClient := alerterAdapter.NewClient(a.Cfg.Alerter, a.Log)
-		alerterSvc = alerterService.New(alerterClient)
-	}
-
-	// Инициализируем Redis кэш (опционально)
-	var cacheClient cache.Cache
-	if a.Cfg.Redis != nil {
-		redisClient, err := a.Cfg.Redis.NewConnection()
-		if err != nil {
-			a.Log.Warn("failed to init redis cache, continuing without cache",
-				"error", err,
-			)
-		} else {
-			cacheClient = redisAdapter.NewClient(redisClient)
-			a.Log.Info("redis cache connected successfully")
-		}
-	}
-
-	// Инициализируем Kafka producers
-	kafkaProducers := make(map[string]*kafkaAdapter.Producer)
-	var ragProducer *kafkaAdapter.Producer
-	for _, kafkaCfg := range a.Cfg.Kafka.List {
-		if kafkaCfg.Config.Topic != "" && kafkaCfg.Config.ConsumerGroup == "" {
-			// Это producer (есть topic, но нет consumer group)
-			prod, err := kafkaAdapter.NewProducer(kafkaCfg.Config, a.Log)
-			if err != nil {
-				a.Log.Warn("failed to create kafka producer",
-					"error", err,
-					"name", kafkaCfg.Name,
-				)
-				continue
-			}
-			kafkaProducers[kafkaCfg.Name] = prod
-			if kafkaCfg.Name == "requests" {
-				ragProducer = prod
-			}
-		}
-	}
-
-	// Создаём UseCase с Telegram Service, Astro API Service, Kafka Producer, Alerter и Cache
-	astroUseCase := astroUsecase.New(
-		userRepo,
-		requestRepo,
-		statusRepo,
-		tgService,
-		astroAPIService,
-		ragProducer, // может быть nil, если не настроен
-		alerterSvc,  // может быть nil, если не настроен
-		cacheClient, // может быть nil, если не настроен
-		a.Log,
-	)
-
-	// Собираем все UseCase в map и обновляем Telegram Service
-	botServicesMap := map[domain.BotType]service.IBotService{
+	astroUseCase, testService := a.initUseCases(repos, tgService, externalServices, kafkaProducers)
+	tgService.SetBotServices(map[domain.BotType]service.IBotService{
 		domain.BotTypeAstro: astroUseCase,
-	}
-	tgService.SetBotServices(botServicesMap)
+	})
 
-	testService := testService.New(testRepo, a.Log)
-
-	healthCheck := healthcheckController.New(db, a.Log)
-	testController := testController.New(testService, a.Log)
-	telegramController := telegramController.New(tgService, a.Log)
-
-	// Создаём контроллеры для HTTP сервера
-	controllers := []server.Controller{
-		healthCheck,
-		testController,
-		telegramController,
+	httpServer := a.initHTTP(db, tgService, testService, externalServices.Alerter)
+	poller, err := a.initTelegramMode(ctx, tgService, telegramClients)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init telegram mode: %w", err)
 	}
 
-	// Добавляем контроллер алертера, если сервис настроен
-	if alerterSvc != nil {
-		controllers = append(controllers, alerterController.New(alerterSvc, a.Log))
-	}
-
-	httpServer := server.NewHTTPServer(
-		a.Cfg.Server,
-		a.Log,
-		controllers...,
-	)
-
-	// Инициализируем webhook или polling
-	a.Log.Info("telegram configuration",
-		"use_webhook", a.Cfg.Telegram.IsWebhookEnabled(),
-		"webhook_url", a.Cfg.Telegram.WebhookURL,
-	)
-
-	var poller *tgAdapter.Poller
-	if a.Cfg.Telegram.IsWebhookEnabled() {
-		// Устанавливаем webhook для каждого бота при старте
-		if err := a.setupWebhooks(ctx, telegramClients); err != nil {
-			return nil, fmt.Errorf("failed to setup webhooks: %w", err)
-		}
-	} else {
-		// Polling для локальной разработки
-		a.Log.Warn("polling mode enabled - this should only be used for local development")
-		poller = a.initPolling(tgService, telegramClients)
-	}
-
-	// Инициализируем Kafka consumers
-	kafkaConsumers := make(map[string]*kafkaConsumerAdapter.Consumer)
-	for _, kafkaCfg := range a.Cfg.Kafka.List {
-		if kafkaCfg.Config.ConsumerGroup != "" {
-			// Это consumer (есть consumer group)
-			handler := a.createHandlerForTopic(kafkaCfg.Name, tgService)
-			if handler == nil {
-				a.Log.Warn("no handler for kafka topic, skipping consumer",
-					"name", kafkaCfg.Name,
-				)
-				continue
-			}
-			consumer, err := kafkaConsumerAdapter.NewConsumer(kafkaCfg.Config, handler, a.Log)
-			if err != nil {
-				a.Log.Warn("failed to create kafka consumer",
-					"error", err,
-					"name", kafkaCfg.Name,
-				)
-				continue
-			}
-			kafkaConsumers[kafkaCfg.Name] = consumer
-		}
-	}
-
-	// Инициализируем планировщик джоб
-	scheduler := jobScheduler.NewScheduler(a.Log, alerterSvc)
-
-	// Регистрируем джобу для обновления позиций планет (только если есть кеш)
-	if cacheClient != nil {
-		positionsUpdater := jobScheduler.NewPositionsUpdater(astroUseCase, a.Log)
-		scheduler.Register(positionsUpdater)
-		a.Log.Info("positions updater job registered")
-	}
+	scheduler := a.initJobScheduler(externalServices.Alerter, astroUseCase, externalServices.Cache)
 
 	return &Dependencies{
 		DB:              db,
@@ -248,9 +88,238 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		TelegramPoller:  poller,
 		KafkaProducers:  kafkaProducers,
 		KafkaConsumers:  kafkaConsumers,
-		Cache:           cacheClient,
+		Cache:           externalServices.Cache,
 		JobScheduler:    scheduler,
 	}, nil
+}
+
+// repositories содержит инициализированные репозитории
+type repositories struct {
+	User    repository.IUserRepo
+	Request repository.IRequestRepo
+	Status  repository.IStatusRepo
+	Test    repository.ITestRepo
+}
+
+// initRepositories инициализирует репозитории для работы с БД
+func (a *App) initRepositories(db *sqlx.DB) *repositories {
+	persistenceLayer := pg.NewDB(db)
+	return &repositories{
+		User:    userRepo.New(persistenceLayer, a.Log),
+		Request: requestRepo.New(persistenceLayer, a.Log),
+		Status:  statusRepo.New(persistenceLayer, a.Log),
+		Test:    testRepo.New(persistenceLayer, a.Log),
+	}
+}
+
+// externalServices содержит внешние сервисы (опциональные)
+type externalServices struct {
+	AstroAPI service.IAstroAPIService
+	Alerter  service.IAlerterService
+	Cache    cache.Cache
+}
+
+// initExternalServices инициализирует внешние сервисы (AstroAPI, Alerter, Cache)
+func (a *App) initExternalServices() *externalServices {
+	services := &externalServices{}
+
+	// AstroAPI - обязательный
+	if a.Cfg.AstroAPI == nil {
+		a.Log.Warn("astro API configuration is missing")
+	} else {
+		astroAPIClient := astroApiAdapter.NewClient(a.Cfg.AstroAPI, a.Log)
+		services.AstroAPI = astroApiService.New(astroAPIClient)
+	}
+
+	// Alerter - опциональный
+	if a.Cfg.Alerter != nil {
+		alerterClient := alerterAdapter.NewClient(a.Cfg.Alerter, a.Log)
+		services.Alerter = alerterService.New(alerterClient)
+	}
+
+	// Redis Cache - опциональный
+	if a.Cfg.Redis != nil {
+		redisClient, err := a.Cfg.Redis.NewConnection()
+		if err != nil {
+			a.Log.Warn("failed to init redis cache, continuing without cache", "error", err)
+		} else {
+			services.Cache = redisAdapter.NewClient(redisClient)
+			a.Log.Info("redis cache connected successfully")
+		}
+	}
+
+	return services
+}
+
+// initTelegram инициализирует Telegram клиенты и сервис
+func (a *App) initTelegram(ctx context.Context) (
+	clients map[domain.BotId]*tgAdapter.Client,
+	tgSvc *telegramService.Service,
+	err error,
+) {
+	if len(a.Cfg.Bots.List) == 0 {
+		return nil, nil, fmt.Errorf("no bots configured: at least one bot must be specified via BOTS_COUNT and BOTS_0_* environment variables")
+	}
+
+	botIDToType := make(map[domain.BotId]domain.BotType)
+	clients = make(map[domain.BotId]*tgAdapter.Client)
+
+	for i, botCfg := range a.Cfg.Bots.List {
+		botID, botType, err := botCfg.ToDomain()
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to convert bot config at index %d: %w", i, err)
+		}
+
+		botIDToType[botID] = botType
+		clients[botID] = tgAdapter.NewClient(botCfg.BotToken, a.Log)
+
+		if err := a.registerBotCommands(ctx, clients[botID]); err != nil {
+			a.Log.Warn("failed to register bot commands", "error", err, "bot_id", botID)
+		}
+	}
+
+	tgSvc = telegramService.New(
+		botIDToType,
+		make(map[domain.BotType]service.IBotService), // будет заполнен после создания UseCase
+		clients,
+		a.Log,
+	)
+
+	return clients, tgSvc, nil
+}
+
+// initKafka инициализирует Kafka producers и consumers
+func (a *App) initKafka(
+	ctx context.Context,
+	tgService *telegramService.Service,
+) (
+	producers map[string]*kafkaAdapter.Producer,
+	consumers map[string]*kafkaConsumerAdapter.Consumer,
+	err error,
+) {
+	producers = make(map[string]*kafkaAdapter.Producer)
+	consumers = make(map[string]*kafkaConsumerAdapter.Consumer)
+
+	for _, kafkaCfg := range a.Cfg.Kafka.List {
+		// Producer: есть topic, но нет consumer group
+		if kafkaCfg.Config.Topic != "" && kafkaCfg.Config.ConsumerGroup == "" {
+			prod, err := kafkaAdapter.NewProducer(kafkaCfg.Config, a.Log)
+			if err != nil {
+				a.Log.Warn("failed to create kafka producer", "error", err, "name", kafkaCfg.Name)
+				continue
+			}
+			producers[kafkaCfg.Name] = prod
+		}
+
+		// Consumer: есть consumer group
+		if kafkaCfg.Config.ConsumerGroup != "" {
+			handler := a.createHandlerForTopic(kafkaCfg.Name, tgService)
+			if handler == nil {
+				a.Log.Warn("no handler for kafka topic, skipping consumer", "name", kafkaCfg.Name)
+				continue
+			}
+
+			consumer, err := kafkaConsumerAdapter.NewConsumer(kafkaCfg.Config, handler, a.Log)
+			if err != nil {
+				a.Log.Warn("failed to create kafka consumer", "error", err, "name", kafkaCfg.Name)
+				continue
+			}
+			consumers[kafkaCfg.Name] = consumer
+		}
+	}
+
+	return producers, consumers, nil
+}
+
+// initUseCases инициализирует UseCases приложения
+func (a *App) initUseCases(
+	repos *repositories,
+	tgService *telegramService.Service,
+	externalServices *externalServices,
+	kafkaProducers map[string]*kafkaAdapter.Producer,
+) (
+	astroUseCase *astroUsecase.Service,
+	testUseCase *testService.Service,
+) {
+	var ragProducer *kafkaAdapter.Producer
+	if prod, ok := kafkaProducers["requests"]; ok {
+		ragProducer = prod
+	}
+
+	astroUseCase = astroUsecase.New(
+		repos.User,
+		repos.Request,
+		repos.Status,
+		tgService,
+		externalServices.AstroAPI,
+		ragProducer,              // может быть nil
+		externalServices.Alerter, // может быть nil
+		externalServices.Cache,   // может быть nil
+		a.Log,
+	)
+
+	testUseCase = testService.New(repos.Test, a.Log)
+
+	return astroUseCase, testUseCase
+}
+
+// initHTTP инициализирует HTTP сервер и контроллеры
+func (a *App) initHTTP(
+	db *sqlx.DB,
+	tgService *telegramService.Service,
+	testUseCase *testService.Service,
+	alerterSvc service.IAlerterService,
+) *http.Server {
+	controllers := []server.Controller{
+		healthcheckController.New(db, a.Log),
+		testController.New(testUseCase, a.Log),
+		telegramController.New(tgService, a.Log),
+	}
+
+	if alerterSvc != nil {
+		controllers = append(controllers, alerterController.New(alerterSvc, a.Log))
+	}
+
+	return server.NewHTTPServer(a.Cfg.Server, a.Log, controllers...)
+}
+
+// initTelegramMode инициализирует режим работы Telegram (webhook или polling)
+func (a *App) initTelegramMode(
+	ctx context.Context,
+	tgService *telegramService.Service,
+	telegramClients map[domain.BotId]*tgAdapter.Client,
+) (*tgAdapter.Poller, error) {
+	a.Log.Info("telegram configuration",
+		"use_webhook", a.Cfg.Telegram.IsWebhookEnabled(),
+		"webhook_url", a.Cfg.Telegram.WebhookURL,
+	)
+
+	if a.Cfg.Telegram.IsWebhookEnabled() {
+		if err := a.setupWebhooks(ctx, telegramClients); err != nil {
+			return nil, fmt.Errorf("failed to setup webhooks: %w", err)
+		}
+		return nil, nil // webhook режим, poller не нужен
+	}
+
+	a.Log.Warn("polling mode enabled - this should only be used for local development")
+	return a.initPolling(tgService, telegramClients), nil
+}
+
+// initJobScheduler инициализирует планировщик джоб
+func (a *App) initJobScheduler(
+	alerterSvc service.IAlerterService,
+	astroUseCase *astroUsecase.Service,
+	cacheClient cache.Cache,
+) *jobScheduler.Scheduler {
+	scheduler := jobScheduler.NewScheduler(a.Log, alerterSvc)
+
+	if cacheClient != nil {
+		positionsUpdater := jobScheduler.NewPositionsUpdater(astroUseCase, a.Log)
+		scheduler.Register(positionsUpdater)
+		a.Log.Info("positions updater job registered")
+	}
+
+	return scheduler
 }
 
 // setupWebhooks устанавливает webhook для всех ботов
@@ -262,20 +331,12 @@ func (a *App) setupWebhooks(ctx context.Context, telegramClients map[domain.BotI
 	webhookURL := fmt.Sprintf("%s/webhook", a.Cfg.Telegram.WebhookURL)
 
 	for botID, client := range telegramClients {
-		// secret_token = bot_id (наш внутренний идентификатор)
 		if err := client.SetWebhook(ctx, webhookURL, string(botID)); err != nil {
-			a.Log.Error("failed to set webhook",
-				"error", err,
-				"bot_id", botID,
-				"webhook_url", webhookURL,
-			)
+			a.Log.Error("failed to set webhook", "error", err, "bot_id", botID, "webhook_url", webhookURL)
 			return fmt.Errorf("failed to set webhook for bot %s: %w", botID, err)
 		}
 
-		a.Log.Info("webhook set successfully",
-			"bot_id", botID,
-			"webhook_url", webhookURL,
-		)
+		a.Log.Info("webhook set successfully", "bot_id", botID, "webhook_url", webhookURL)
 	}
 
 	return nil
@@ -314,6 +375,7 @@ func (a *App) registerBotCommands(ctx context.Context, client *tgAdapter.Client)
 	return client.SetMyCommands(ctx, commands)
 }
 
+// initPostgres инициализирует подключение к PostgreSQL и запускает миграции
 func (a *App) initPostgres() (*sqlx.DB, error) {
 	db, err := a.Cfg.Postgres.NewConnection()
 	if err != nil {
@@ -329,7 +391,7 @@ func (a *App) initPostgres() (*sqlx.DB, error) {
 	return db, nil
 }
 
-// createHandlerForTopic создаёт handler для указанного топика
+// createHandlerForTopic создаёт handler для указанного топика Kafka
 func (a *App) createHandlerForTopic(
 	topicName string,
 	tgService *telegramService.Service,
@@ -338,9 +400,7 @@ func (a *App) createHandlerForTopic(
 	case "responses":
 		return kafkaHandlers.NewRAGResponseHandler(tgService, a.Log)
 	default:
-		a.Log.Warn("unknown kafka topic, using default handler",
-			"topic", topicName,
-		)
+		a.Log.Warn("unknown kafka topic, using default handler", "topic", topicName)
 		return nil
 	}
 }
