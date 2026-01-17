@@ -231,7 +231,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	}
 
 	// Инициализируем планировщик джоб
-	scheduler := jobScheduler.NewScheduler(a.Log)
+	scheduler := jobScheduler.NewScheduler(a.Log, alerterSvc)
 
 	// Регистрируем джобу для обновления позиций планет (только если есть кеш)
 	if cacheClient != nil {

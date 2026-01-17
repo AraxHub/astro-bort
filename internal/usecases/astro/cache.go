@@ -27,7 +27,6 @@ func (s *Service) UpdateCachedPositions(ctx context.Context, dateTime time.Time)
 	if err := s.Cache.Set(ctx, cacheKey, positions, ttl); err != nil {
 		return fmt.Errorf("failed to cache positions: %w", err)
 	}
-
-	s.Log.Debug("positions cached successfully", "key", cacheKey, "ttl", ttl)
+	
 	return nil
 }

@@ -5,8 +5,9 @@ import (
 	"time"
 )
 
-// Job представляет периодическую задачу, которую можно запланировать
+// Job задача, которую можно запланировать
 type Job interface {
+	Name() string
 	NextRun(now time.Time) time.Time
 	Run(ctx context.Context) error
 }
