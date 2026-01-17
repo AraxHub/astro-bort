@@ -22,6 +22,7 @@ const (
 type Config struct {
 	Host            string `envconfig:"HOST" default:"localhost"`
 	Port            string `envconfig:"PORT" default:"6379"`
+	Username        string `envconfig:"USERNAME" required:"true"`
 	Password        string `envconfig:"PASSWORD"`
 	Database        int    `envconfig:"DATABASE" default:"0"`
 	MaxRetries      int    `envconfig:"MAX_RETRIES" default:"3"`
@@ -80,6 +81,7 @@ func (c *Config) NewConnection() (*redis.Client, error) {
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:            addr,
+		Username:        c.Username,
 		Password:        c.Password,
 		DB:              c.Database,
 		MaxRetries:      maxRetries,
