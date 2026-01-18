@@ -48,17 +48,10 @@ func NewPoller(client *Client, botID domain.BotId, config *Config, handler Updat
 	}
 }
 
-// UpdateResult структура для одного обновления из getUpdates
-type UpdateResult struct {
-	UpdateID      int64                 `json:"update_id"`
-	Message       *domain.Message       `json:"message,omitempty"`
-	CallbackQuery *domain.CallbackQuery `json:"callback_query,omitempty"`
-}
-
 // GetUpdatesResponse ответ от Telegram API для getUpdates
 type GetUpdatesResponse struct {
 	APIResponse
-	Result []UpdateResult `json:"result"`
+	Result []domain.Update `json:"result"`
 }
 
 // Start запускает long polling в отдельной горутине
@@ -86,19 +79,15 @@ func (p *Poller) Start(ctx context.Context) error {
 			}
 
 			for _, updateData := range updates {
-				update := &domain.Update{
-					UpdateID:      updateData.UpdateID,
-					Message:       updateData.Message,
-					CallbackQuery: updateData.CallbackQuery,
-				}
+				update := updateData // копируем значение для передачи указателя
 
 				// Обновляем lastUpdateID
-				if updateData.UpdateID >= p.lastUpdateID {
-					p.lastUpdateID = updateData.UpdateID + 1
+				if update.UpdateID >= p.lastUpdateID {
+					p.lastUpdateID = update.UpdateID + 1
 				}
 
 				// Обрабатываем обновление через handler
-				if err := p.handler(ctx, p.botID, update); err != nil {
+				if err := p.handler(ctx, p.botID, &update); err != nil {
 					p.log.Error("failed to handle update",
 						"error", err,
 						"update_id", update.UpdateID,
@@ -112,7 +101,7 @@ func (p *Poller) Start(ctx context.Context) error {
 }
 
 // getUpdates получает обновления от Telegram API
-func (p *Poller) getUpdates(ctx context.Context) ([]UpdateResult, error) {
+func (p *Poller) getUpdates(ctx context.Context) ([]domain.Update, error) {
 	timeout := p.config.PollingTimeout
 	if timeout <= 0 {
 		timeout = 30 // дефолтный таймаут
@@ -155,7 +144,7 @@ func (p *Poller) getUpdates(ctx context.Context) ([]UpdateResult, error) {
 			)
 			// Возвращаем пустой список обновлений, чтобы не прерывать цикл
 			// В следующей итерации попробуем снова
-			return []UpdateResult{}, nil
+			return []domain.Update{}, nil
 		}
 
 		p.log.Error("telegram API returned error",

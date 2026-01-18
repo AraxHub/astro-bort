@@ -23,6 +23,7 @@ import (
 	"github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/repository"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
+	paymentRepo "github.com/admin/tg-bots/astro-bot/internal/repository/payment"
 	requestRepo "github.com/admin/tg-bots/astro-bot/internal/repository/request"
 	statusRepo "github.com/admin/tg-bots/astro-bot/internal/repository/status"
 	testRepo "github.com/admin/tg-bots/astro-bot/internal/repository/test"
@@ -72,13 +73,16 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		domain.BotTypeAstro: astroUseCase,
 	})
 
+	// Инициализируем payment use case и интегрируем в telegram service и astro use case
+	a.initPayment(telegramClients, repos, tgService, externalServices.Alerter, astroUseCase)
+
 	httpServer := a.initHTTP(db, tgService, testService, externalServices.Alerter)
 	poller, err := a.initTelegramMode(ctx, tgService, telegramClients)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init telegram mode: %w", err)
 	}
 
-	scheduler := a.initJobScheduler(externalServices.Alerter, astroUseCase, externalServices.Cache)
+	scheduler := a.initJobScheduler(externalServices.Alerter, astroUseCase, externalServices.Cache, repos)
 
 	return &Dependencies{
 		DB:              db,
@@ -99,6 +103,7 @@ type repositories struct {
 	Request repository.IRequestRepo
 	Status  repository.IStatusRepo
 	Test    repository.ITestRepo
+	Payment repository.IPaymentRepo
 }
 
 // initRepositories инициализирует репозитории для работы с БД
@@ -109,6 +114,7 @@ func (a *App) initRepositories(db *sqlx.DB) *repositories {
 		Request: requestRepo.New(persistenceLayer, a.Log),
 		Status:  statusRepo.New(persistenceLayer, a.Log),
 		Test:    testRepo.New(persistenceLayer, a.Log),
+		Payment: paymentRepo.New(persistenceLayer, a.Log),
 	}
 }
 
@@ -246,6 +252,16 @@ func (a *App) initUseCases(
 		ragProducer = prod
 	}
 
+	// дефолт
+	freeMessagesLimit := 15
+	starsPrice := int64(1000)
+	if a.Cfg.Astro != nil {
+		freeMessagesLimit = a.Cfg.Astro.FreeMessagesLimit
+		if a.Cfg.Astro.StarsPrice > 0 {
+			starsPrice = a.Cfg.Astro.StarsPrice
+		}
+	}
+
 	astroUseCase = astroUsecase.New(
 		repos.User,
 		repos.Request,
@@ -255,6 +271,8 @@ func (a *App) initUseCases(
 		ragProducer,              // может быть nil
 		externalServices.Alerter, // может быть nil
 		externalServices.Cache,   // может быть nil
+		freeMessagesLimit,
+		starsPrice,
 		a.Log,
 	)
 
@@ -310,13 +328,22 @@ func (a *App) initJobScheduler(
 	alerterSvc service.IAlerterService,
 	astroUseCase *astroUsecase.Service,
 	cacheClient cache.Cache,
+	repos *repositories,
 ) *jobScheduler.Scheduler {
 	scheduler := jobScheduler.NewScheduler(a.Log, alerterSvc)
 
+	// Регистрируем джобу для обновления позиций планет (если кеш включен)
 	if cacheClient != nil {
 		positionsUpdater := jobScheduler.NewPositionsUpdater(astroUseCase, a.Log)
 		scheduler.Register(positionsUpdater)
 		a.Log.Info("positions updater job registered")
+	}
+
+	// Регистрируем джобу для проверки истёкших подписок
+	if astroUseCase != nil {
+		subscriptionExpirer := jobScheduler.NewSubscriptionExpirer(astroUseCase, a.Log)
+		scheduler.Register(subscriptionExpirer)
+		a.Log.Info("subscription expirer job registered")
 	}
 
 	return scheduler

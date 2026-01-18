@@ -11,6 +11,12 @@ import (
 
 // GetOrCreateUser получает пользователя по Telegram ID или создаёт нового
 func (s *Service) GetOrCreateUser(ctx context.Context, botID domain.BotId, tgUser *domain.TelegramUser, chat *domain.Chat) (*domain.User, error) {
+	// Определяем chatID: если chat == nil, используем tgUser.ID (для приватных чатов это работает)
+	chatID := tgUser.ID
+	if chat != nil {
+		chatID = chat.ID
+	}
+
 	// Пытаемся найти существующего пользователя
 	user, err := s.UserRepo.GetByTelegramID(ctx, tgUser.ID)
 	if err == nil && user != nil {
@@ -28,7 +34,7 @@ func (s *Service) GetOrCreateUser(ctx context.Context, botID domain.BotId, tgUse
 			(tgUser.Username != nil && user.Username != nil && *tgUser.Username != *user.Username) {
 			needsUpdate = true
 		}
-		if user.TelegramChatID != chat.ID {
+		if user.TelegramChatID != chatID {
 			needsUpdate = true
 		}
 
@@ -37,7 +43,7 @@ func (s *Service) GetOrCreateUser(ctx context.Context, botID domain.BotId, tgUse
 			user.FirstName = tgUser.FirstName
 			user.LastName = tgUser.LastName
 			user.Username = tgUser.Username
-			user.TelegramChatID = chat.ID
+			user.TelegramChatID = chatID
 			user.UpdatedAt = time.Now()
 
 			if err := s.UserRepo.UpdateProfile(ctx, user); err != nil {
@@ -62,7 +68,7 @@ func (s *Service) GetOrCreateUser(ctx context.Context, botID domain.BotId, tgUse
 	user = &domain.User{
 		ID:             uuid.New(),
 		TelegramUserID: tgUser.ID,
-		TelegramChatID: chat.ID,
+		TelegramChatID: chatID,
 		FirstName:      tgUser.FirstName,
 		LastName:       tgUser.LastName,
 		Username:       tgUser.Username,

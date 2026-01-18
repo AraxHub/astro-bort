@@ -19,6 +19,8 @@ func (s *Service) HandleCommand(ctx context.Context, botID domain.BotId, user *d
 		return s.HandleMyInfo(ctx, botID, user)
 	case "reset_birth_data":
 		return s.HandleResetBirthData(ctx, botID, user)
+	case "buy", "test_payment":
+		return s.HandleBuy(ctx, botID, user)
 	default:
 		return s.sendMessage(ctx, botID, user.TelegramChatID, fmt.Sprintf("❌ Неизвестная команда: /%s\n\nИспользуй /help для списка команд", command))
 	}
@@ -99,7 +101,7 @@ func (s *Service) HandleMyInfo(ctx context.Context, botID domain.BotId, user *do
 	} else if len(natalReport) > 0 {
 		message.WriteString("✨ Натальная карта: ✅\n")
 		if user.NatalChartFetchedAt != nil {
-		message.WriteString(fmt.Sprintf("   Получена: %s\n", user.NatalChartFetchedAt.Format("02.01.2006 15:04")))
+			message.WriteString(fmt.Sprintf("   Получена: %s\n", user.NatalChartFetchedAt.Format("02.01.2006 15:04")))
 		}
 	} else {
 		message.WriteString("✨ Натальная карта: ❌ (не установлена)\n")
@@ -108,6 +110,45 @@ func (s *Service) HandleMyInfo(ctx context.Context, botID domain.BotId, user *do
 		} else {
 			message.WriteString("   Используй /reset_birth_data для настройки\n")
 		}
+	}
+
+	message.WriteString("\n")
+
+	// Информация о тарифе и бесплатных сообщениях
+	isPaidUser := user.IsPaid || user.ManualGranted
+	if isPaidUser {
+		message.WriteString("💎 Тариф: куплен 🐾\n")
+		if !user.ManualGranted && s.PaymentRepo != nil {
+			// Получаем дату последнего успешного платежа для вычисления даты окончания
+			lastPaymentDate, err := s.PaymentRepo.GetLastSuccessfulPaymentDate(ctx, user.ID)
+			if err != nil {
+				s.Log.Warn("failed to get last payment date for my_info",
+					"error", err,
+					"user_id", user.ID,
+				)
+				message.WriteString("   Тариф активен 🎉\n")
+			} else if lastPaymentDate != nil {
+				// Вычисляем дату окончания: последний платёж + 30 дней
+				expiryDate := lastPaymentDate.Add(30 * 24 * time.Hour)
+				message.WriteString("🆓 Бесплатных сообщений осталось: безлимит 🐱\n")
+				message.WriteString(fmt.Sprintf("   Тариф активен до %s 🎉\n", expiryDate.Format("02.01.2006")))
+			} else {
+				message.WriteString("   Тариф активен 🎉\n")
+			}
+		} else if user.ManualGranted {
+			message.WriteString("🆓 Бесплатных сообщений осталось: безлимит 🐱\n")
+			message.WriteString("   Тариф активен (ручной доступ) 🎉\n")
+		} else {
+			message.WriteString("🆓 Бесплатных сообщений осталось: безлимит 🐱\n")
+			message.WriteString("   Тариф активен 🎉\n")
+		}
+	} else {
+		message.WriteString("💎 Тариф: не куплен 🐾\n")
+		remaining := s.FreeMessagesLimit - user.FreeMsgCount
+		if remaining < 0 {
+			remaining = 0
+		}
+		message.WriteString(fmt.Sprintf("🆓 Бесплатных сообщений осталось: %d из %d 🐱\n", remaining, s.FreeMessagesLimit))
 	}
 
 	return s.sendMessage(ctx, botID, user.TelegramChatID, message.String())
@@ -126,4 +167,45 @@ func (s *Service) HandleResetBirthData(ctx context.Context, botID domain.BotId, 
 		"Это удалит дату рождения и натальную карту.\n" +
 		"Введи 'ПОДТВЕРДИТЬ' для подтверждения."
 	return s.sendMessage(ctx, botID, user.TelegramChatID, message)
+}
+
+// HandleBuy обрабатывает команду /buy или /test_payment (тестовый платёж)
+func (s *Service) HandleBuy(ctx context.Context, botID domain.BotId, user *domain.User) error {
+	if s.PaymentService == nil {
+		return s.sendMessage(ctx, botID, user.TelegramChatID,
+			"❌ Платёжная система недоступна")
+	}
+
+	// Тестовые данные платежа
+	productID := "test_premium"
+	productTitle := "Премиум доступ (тест)"
+	description := "Тестовый платёж для проверки системы Stars. Доступ на 1 месяц."
+	amount := s.StarsPrice // цена из конфигурации
+
+	payment, err := s.PaymentService.CreatePayment(
+		ctx,
+		botID,
+		user.ID,
+		user.TelegramChatID,
+		productID,
+		productTitle,
+		description,
+		amount,
+	)
+	if err != nil {
+		s.Log.Error("failed to create payment",
+			"error", err,
+			"user_id", user.ID,
+			"bot_id", botID,
+		)
+		return s.sendMessage(ctx, botID, user.TelegramChatID,
+			"❌ Не удалось создать платёж. Попробуйте позже.")
+	}
+
+	s.Log.Info("test payment created",
+		"payment_id", payment.ID,
+		"user_id", user.ID,
+		"amount", amount,
+	)
+	return nil
 }

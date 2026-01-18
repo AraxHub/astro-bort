@@ -22,4 +22,7 @@ type User struct {
 	CreatedAt               time.Time   `json:"created_at" db:"created_at"`
 	UpdatedAt               time.Time   `json:"updated_at" db:"updated_at"`
 	LastSeenAt              *time.Time  `json:"last_seen_at,omitempty" db:"last_seen_at"`
+	IsPaid                  bool        `json:"is_paid" db:"is_paid"`               // платный статус пользователя (через платёж)
+	ManualGranted           bool        `json:"manual_granted" db:"manual_granted"` // платный доступ выдан вручную (админ)
+	FreeMsgCount            int         `json:"free_msg_count" db:"free_msg_count"` // счётчик бесплатных сообщений
 }

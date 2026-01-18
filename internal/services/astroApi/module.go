@@ -164,12 +164,10 @@ func parseBirthPlace(birthPlace string) (city, countryCode string) {
 		return "Unknown", "RU" // Дефолтные значения
 	}
 
-	// Пытаемся найти запятую
 	for i, char := range birthPlace {
 		if char == ',' {
 			city = birthPlace[:i]
 			countryCode = birthPlace[i+1:]
-			// Убираем пробелы
 			if len(city) > 0 && city[0] == ' ' {
 				city = city[1:]
 			}
@@ -184,5 +182,5 @@ func parseBirthPlace(birthPlace string) (city, countryCode string) {
 	}
 
 	// Если запятой нет, используем весь текст как город
-	return birthPlace, "RU" // Дефолтный код страны
+	return birthPlace, "RU"
 }

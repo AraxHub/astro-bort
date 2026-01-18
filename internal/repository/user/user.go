@@ -33,6 +33,9 @@ type userColumns struct {
 	CreatedAt               string
 	UpdatedAt               string
 	LastSeenAt              string
+	IsPaid                  string
+	ManualGranted           string
+	FreeMsgCount            string
 }
 
 type Repository struct {
@@ -60,6 +63,9 @@ func New(db persistence.Persistence, log *slog.Logger) ports.IUserRepo {
 		CreatedAt:               "created_at",
 		UpdatedAt:               "updated_at",
 		LastSeenAt:              "last_seen_at",
+		IsPaid:                  "is_paid",
+		ManualGranted:           "manual_granted",
+		FreeMsgCount:            "free_msg_count",
 	}
 	return &Repository{
 		db:      db,
@@ -68,9 +74,9 @@ func New(db persistence.Persistence, log *slog.Logger) ports.IUserRepo {
 	}
 }
 
-// allColumns возвращает строку со всеми колонками (15 колонок)
+// allColumns возвращает строку со всеми колонками (18 колонок)
 func (r *Repository) allColumns() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
+	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
 		r.columns.ID,
 		r.columns.TelegramUserID,
 		r.columns.TelegramChatID,
@@ -85,12 +91,15 @@ func (r *Repository) allColumns() string {
 		r.columns.NatalChartFetchedAt,
 		r.columns.CreatedAt,
 		r.columns.UpdatedAt,
-		r.columns.LastSeenAt)
+		r.columns.LastSeenAt,
+		r.columns.IsPaid,
+		r.columns.ManualGranted,
+		r.columns.FreeMsgCount)
 }
 
-// allColumnsExceptNatalChart возвращает строку со всеми колонками кроме natal_chart (14 колонок)
+// allColumnsExceptNatalChart возвращает строку со всеми колонками кроме natal_chart (17 колонок)
 func (r *Repository) allColumnsExceptNatalChart() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
+	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
 		r.columns.ID,
 		r.columns.TelegramUserID,
 		r.columns.TelegramChatID,
@@ -104,12 +113,15 @@ func (r *Repository) allColumnsExceptNatalChart() string {
 		r.columns.NatalChartFetchedAt,
 		r.columns.CreatedAt,
 		r.columns.UpdatedAt,
-		r.columns.LastSeenAt)
+		r.columns.LastSeenAt,
+		r.columns.IsPaid,
+		r.columns.ManualGranted,
+		r.columns.FreeMsgCount)
 }
 
 // Create создаёт нового пользователя
 func (r *Repository) Create(ctx context.Context, user *domain.User) error {
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
 		r.columns.TableName,
 		r.allColumns())
 	err := r.db.Exec(ctx, query,
@@ -127,7 +139,10 @@ func (r *Repository) Create(ctx context.Context, user *domain.User) error {
 		user.NatalChartFetchedAt,
 		user.CreatedAt,
 		user.UpdatedAt,
-		user.LastSeenAt)
+		user.LastSeenAt,
+		user.IsPaid,
+		user.ManualGranted,
+		user.FreeMsgCount)
 	if err != nil {
 		r.Log.Error("failed to create user",
 			"error", err,
@@ -317,7 +332,7 @@ func (r *Repository) WithTransaction(ctx context.Context, fn func(context.Contex
 
 // CreateTx создаёт пользователя в транзакции
 func (r *Repository) CreateTx(ctx context.Context, tx persistence.Transaction, user *domain.User) error {
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
 		r.columns.TableName,
 		r.allColumns())
 	err := tx.Exec(ctx, query,
@@ -335,7 +350,10 @@ func (r *Repository) CreateTx(ctx context.Context, tx persistence.Transaction, u
 		user.NatalChartFetchedAt,
 		user.CreatedAt,
 		user.UpdatedAt,
-		user.LastSeenAt)
+		user.LastSeenAt,
+		user.IsPaid,
+		user.ManualGranted,
+		user.FreeMsgCount)
 	if err != nil {
 		r.Log.Error("failed to create user in transaction",
 			"error", err,
@@ -449,4 +467,120 @@ func (r *Repository) GetByTelegramIDTx(ctx context.Context, tx persistence.Trans
 	}
 	r.Log.Debug("user retrieved in transaction", "telegram_user_id", telegramID, "user_id", user.ID)
 	return &user, nil
+}
+
+// UpdateFreeMsgCount инкрементирует счётчик бесплатных сообщений
+func (r *Repository) UpdateFreeMsgCount(ctx context.Context, userID uuid.UUID) error {
+	now := time.Now()
+	query := fmt.Sprintf(`UPDATE %s SET %s = %s + 1, %s = $1 WHERE %s = $2`,
+		r.columns.TableName,
+		r.columns.FreeMsgCount,
+		r.columns.FreeMsgCount,
+		r.columns.UpdatedAt,
+		r.columns.ID)
+	rowsAffected, err := r.db.ExecWithResult(ctx, query, now, userID)
+	if err != nil {
+		r.Log.Error("failed to increment free_msg_count",
+			"error", err,
+			"user_id", userID)
+		return fmt.Errorf("failed to increment free_msg_count: %w", err)
+	}
+	if rowsAffected == 0 {
+		r.Log.Warn("user not found for increment free_msg_count", "user_id", userID)
+		return fmt.Errorf("user not found")
+	}
+	r.Log.Debug("free_msg_count incremented successfully", "user_id", userID)
+	return nil
+}
+
+// SetPaidStatus устанавливает платный статус и сбрасывает счётчик бесплатных сообщений
+func (r *Repository) SetPaidStatus(ctx context.Context, userID uuid.UUID, isPaid bool) error {
+	now := time.Now()
+	query := fmt.Sprintf(`UPDATE %s SET %s = $1, %s = 0, %s = $2 WHERE %s = $3`,
+		r.columns.TableName,
+		r.columns.IsPaid,
+		r.columns.FreeMsgCount,
+		r.columns.UpdatedAt,
+		r.columns.ID)
+	rowsAffected, err := r.db.ExecWithResult(ctx, query, isPaid, now, userID)
+	if err != nil {
+		r.Log.Error("failed to set paid status",
+			"error", err,
+			"user_id", userID,
+			"is_paid", isPaid)
+		return fmt.Errorf("failed to set paid status: %w", err)
+	}
+	if rowsAffected == 0 {
+		r.Log.Warn("user not found for set paid status", "user_id", userID)
+		return fmt.Errorf("user not found")
+	}
+	r.Log.Debug("paid status set successfully", "user_id", userID, "is_paid", isPaid)
+	return nil
+}
+
+// GetUsersWithExpiredSubscriptions возвращает список ID пользователей с истёкшими подписками
+func (r *Repository) GetUsersWithExpiredSubscriptions(ctx context.Context) ([]uuid.UUID, error) {
+	query := `
+		SELECT DISTINCT u.id
+		FROM tg_users u
+		INNER JOIN (
+			SELECT user_id, MAX(succeeded_at) as last_payment_date
+			FROM payments
+			WHERE status = $1 AND succeeded_at IS NOT NULL
+			GROUP BY user_id
+		) p ON u.id = p.user_id
+		WHERE u.is_paid = true
+		  AND u.manual_granted = false
+		  AND (p.last_payment_date AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC') < NOW() - INTERVAL '30 days'
+	`
+
+	var userIDs []uuid.UUID
+	if err := r.db.Select(ctx, &userIDs, query, "succeeded"); err != nil {
+		r.Log.Error("failed to get users with expired subscriptions",
+			"error", err)
+		return nil, fmt.Errorf("failed to get users with expired subscriptions: %w", err)
+	}
+
+	return userIDs, nil
+}
+
+// RevokeExpiredSubscriptions снимает платный статус у пользователей с истёкшими подписками
+func (r *Repository) RevokeExpiredSubscriptions(ctx context.Context) (int64, error) {
+	now := time.Now()
+
+	query := fmt.Sprintf(`
+		UPDATE %s 
+		SET %s = false, %s = $1
+		WHERE %s IN (
+			SELECT DISTINCT u.id
+			FROM %s u
+			INNER JOIN (
+				SELECT user_id, MAX(succeeded_at) as last_payment_date
+				FROM payments
+				WHERE status = $2 AND succeeded_at IS NOT NULL
+				GROUP BY user_id
+			) p ON u.id = p.user_id
+			WHERE u.%s = true
+			  AND u.%s = false
+			  AND (p.last_payment_date AT TIME ZONE 'Europe/Moscow' AT TIME ZONE 'UTC') < NOW() - INTERVAL '30 days'
+		)`,
+		r.columns.TableName,
+		r.columns.IsPaid,
+		r.columns.UpdatedAt,
+		r.columns.ID,
+		r.columns.TableName,
+		r.columns.IsPaid,
+		r.columns.ManualGranted,
+	)
+
+	rowsAffected, err := r.db.ExecWithResult(ctx, query, now, "succeeded")
+	if err != nil {
+		r.Log.Error("failed to revoke expired subscriptions",
+			"error", err)
+		return 0, fmt.Errorf("failed to revoke expired subscriptions: %w", err)
+	}
+
+	r.Log.Info("expired subscriptions revoked",
+		"rows_affected", rowsAffected)
+	return rowsAffected, nil
 }

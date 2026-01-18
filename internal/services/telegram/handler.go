@@ -17,7 +17,17 @@ func (s *Service) HandleUpdate(ctx context.Context, botID domain.BotId, update *
 		return fmt.Errorf("update is nil")
 	}
 
+	// Обрабатываем pre_checkout_query (для платежей Stars)
+	if update.PreCheckoutQuery != nil {
+		return s.HandlePreCheckoutQuery(ctx, botID, update.PreCheckoutQuery)
+	}
+
 	if update.Message != nil {
+		// Обрабатываем successful_payment (для платежей Stars)
+		if update.Message.SuccessfulPayment != nil {
+			return s.HandleSuccessfulPayment(ctx, botID, update.Message)
+		}
+
 		return s.HandleMessage(ctx, botID, update.Message, update.UpdateID)
 	}
 

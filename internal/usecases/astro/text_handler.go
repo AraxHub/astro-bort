@@ -245,6 +245,45 @@ func (s *Service) confirmResetBirthData(ctx context.Context, botID domain.BotId,
 
 // handleUserQuestion обрабатывает вопрос пользователя
 func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, user *domain.User, text string, updateID int64) (err error) {
+	// Проверяем лимит бесплатных сообщений для бесплатных пользователей
+	// Пользователь платный, если оплатил (is_paid) или получил доступ вручную (manual_granted)
+	isPaidUser := user.IsPaid || user.ManualGranted
+	if !isPaidUser && user.FreeMsgCount >= s.FreeMessagesLimit {
+		message := "🐱 Ой, у меня кончился корм! Я больше не могу отвечать на вопросы бесплатно. Оплатишь корм? 🌟"
+		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, message); sendErr != nil {
+			s.Log.Warn("failed to send payment request message", "error", sendErr)
+		}
+
+		// Создаём платеж (invoice отправится автоматически)
+		if s.PaymentService != nil {
+			productID := "monthly_feed"
+			productTitle := "Корм для Киты (месяц)"
+			description := "Платёж за месяц безлимитных ответов от Киты"
+			amount := s.StarsPrice
+
+			_, paymentErr := s.PaymentService.CreatePayment(
+				ctx,
+				botID,
+				user.ID,
+				user.TelegramChatID,
+				productID,
+				productTitle,
+				description,
+				amount,
+			)
+			if paymentErr != nil {
+				s.Log.Error("failed to create payment for free limit",
+					"error", paymentErr,
+					"user_id", user.ID,
+					"bot_id", botID,
+				)
+				// Не возвращаем ошибку - сообщение уже отправлено
+			}
+		}
+
+		return nil // Лимит достигнут, запрос не отправляем в RAG
+	}
+
 	var requestID uuid.UUID
 	var statusStage domain.RequestStage
 	var statusErrorCode string
@@ -345,6 +384,18 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 
 	requestID = request.ID
 	statusCreated = true
+
+	// Инкрементируем счётчик бесплатных сообщений для бесплатных пользователей
+	if !isPaidUser {
+		if err = s.UserRepo.UpdateFreeMsgCount(ctx, user.ID); err != nil {
+			s.Log.Warn("failed to increment free_msg_count",
+				"error", err,
+				"user_id", user.ID,
+				"request_id", requestID,
+			)
+			// Не возвращаем ошибку - продолжаем обработку запроса
+		}
+	}
 
 	// lazy loading - отчёт достаём ток перед отправкой в кафку
 	natalReport, err := s.UserRepo.GetNatalChart(ctx, user.ID)

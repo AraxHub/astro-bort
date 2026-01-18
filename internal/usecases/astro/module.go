@@ -13,15 +13,19 @@ import (
 
 // Service бизнес-логика астро-бота
 type Service struct {
-	UserRepo        repository.IUserRepo
-	RequestRepo     repository.IRequestRepo
-	StatusRepo      repository.IStatusRepo
-	TelegramService service.ITelegramService
-	AstroAPIService service.IAstroAPIService
-	KafkaProducer   kafka.IKafkaProducer
-	AlerterService  service.IAlerterService
-	Cache           cache.Cache
-	Log             *slog.Logger
+	UserRepo          repository.IUserRepo
+	RequestRepo       repository.IRequestRepo
+	StatusRepo        repository.IStatusRepo
+	TelegramService   service.ITelegramService
+	AstroAPIService   service.IAstroAPIService
+	KafkaProducer     kafka.IKafkaProducer
+	AlerterService    service.IAlerterService
+	PaymentService    service.IPaymentService // опциональный, для платежей
+	PaymentRepo       repository.IPaymentRepo // опциональный, для получения данных о платежах
+	Cache             cache.Cache
+	FreeMessagesLimit int   // лимит бесплатных сообщений
+	StarsPrice        int64 // цена подписки в звёздах
+	Log               *slog.Logger
 }
 
 func New(
@@ -33,19 +37,35 @@ func New(
 	kafkaProducer kafka.IKafkaProducer,
 	alerterService service.IAlerterService,
 	cache cache.Cache,
+	freeMessagesLimit int,
+	starsPrice int64,
 	log *slog.Logger,
 ) *Service {
 	return &Service{
-		UserRepo:        userRepo,
-		RequestRepo:     requestRepo,
-		StatusRepo:      statusRepo,
-		TelegramService: telegramService,
-		AstroAPIService: astroAPIService,
-		KafkaProducer:   kafkaProducer,
-		AlerterService:  alerterService,
-		Cache:           cache,
-		Log:             log,
+		UserRepo:          userRepo,
+		RequestRepo:       requestRepo,
+		StatusRepo:        statusRepo,
+		TelegramService:   telegramService,
+		AstroAPIService:   astroAPIService,
+		KafkaProducer:     kafkaProducer,
+		AlerterService:    alerterService,
+		PaymentService:    nil, // будет установлен через SetPaymentService
+		PaymentRepo:       nil, // будет установлен через SetPaymentRepo
+		Cache:             cache,
+		FreeMessagesLimit: freeMessagesLimit,
+		StarsPrice:        starsPrice,
+		Log:               log,
 	}
+}
+
+// SetPaymentService устанавливает payment service (опционально)
+func (s *Service) SetPaymentService(paymentService service.IPaymentService) {
+	s.PaymentService = paymentService
+}
+
+// SetPaymentRepo устанавливает payment repo (опционально)
+func (s *Service) SetPaymentRepo(paymentRepo repository.IPaymentRepo) {
+	s.PaymentRepo = paymentRepo
 }
 
 // createOrLogStatus не падает если БД недоступна

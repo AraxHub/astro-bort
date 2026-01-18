@@ -26,6 +26,13 @@ type Config struct {
 	Bots     BotsConfig                `envconfig:"BOTS"`
 	Kafka    kafkaAdapter.KafkaConfigs `envconfig:"KAFKA"`
 	Alerter  *alerterAdapter.Config    `envconfig:"ALERTER"`
+	Astro    *AstroConfig              `envconfig:"ASTRO"`
+}
+
+// AstroConfig конфигурация бизнес-логики Astro бота
+type AstroConfig struct {
+	FreeMessagesLimit int   `envconfig:"FREE_MESSAGES_LIMIT" default:"15"`
+	StarsPrice        int64 `envconfig:"STARS_PRICE" default:"1"`
 }
 
 // BotsConfig конфигурация ботов

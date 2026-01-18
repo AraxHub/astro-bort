@@ -17,6 +17,10 @@ type IUserRepo interface {
 	Update(ctx context.Context, user *domain.User) error
 	UpdateProfile(ctx context.Context, user *domain.User) error
 	UpdateLastSeen(ctx context.Context, userID uuid.UUID) error
+	UpdateFreeMsgCount(ctx context.Context, userID uuid.UUID) error
+	SetPaidStatus(ctx context.Context, userID uuid.UUID, isPaid bool) error
+	GetUsersWithExpiredSubscriptions(ctx context.Context) ([]uuid.UUID, error)
+	RevokeExpiredSubscriptions(ctx context.Context) (int64, error)
 
 	BeginTx(ctx context.Context) (persistence.Transaction, error)
 	WithTransaction(ctx context.Context, fn func(context.Context, persistence.Transaction) error) error

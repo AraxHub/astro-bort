@@ -4,9 +4,10 @@ package domain
 
 // Update - входящее обновление от Telegram Bot API
 type Update struct {
-	UpdateID      int64          `json:"update_id"`
-	Message       *Message       `json:"message,omitempty"`
-	CallbackQuery *CallbackQuery `json:"callback_query,omitempty"`
+	UpdateID         int64             `json:"update_id"`
+	Message          *Message          `json:"message,omitempty"`
+	CallbackQuery    *CallbackQuery    `json:"callback_query,omitempty"`
+	PreCheckoutQuery *PreCheckoutQuery `json:"pre_checkout_query,omitempty"` // для обработки платежей Stars
 	// Можно добавить другие типы обновлений по мере необходимости:
 	// EditedMessage      *Message `json:"edited_message,omitempty"`
 	// и т.д.
@@ -22,12 +23,13 @@ type CallbackQuery struct {
 
 // Message - сообщение от Telegram Bot API
 type Message struct {
-	MessageID int64         `json:"message_id"`
-	From      *TelegramUser `json:"from,omitempty"`     // отправитель (Telegram User)
-	Chat      *Chat         `json:"chat"`               // чат
-	Date      int64         `json:"date"`               // Unix timestamp
-	Text      *string       `json:"text,omitempty"`     // текст сообщения
-	Entities  []Entity      `json:"entities,omitempty"` // сущности (команды, упоминания и т.д.)
+	MessageID         int64              `json:"message_id"`
+	From              *TelegramUser      `json:"from,omitempty"`               // отправитель (Telegram User)
+	Chat              *Chat              `json:"chat"`                         // чат
+	Date              int64              `json:"date"`                         // Unix timestamp
+	Text              *string            `json:"text,omitempty"`               // текст сообщения
+	Entities          []Entity           `json:"entities,omitempty"`           // сущности (команды, упоминания и т.д.)
+	SuccessfulPayment *SuccessfulPayment `json:"successful_payment,omitempty"` // успешный платёж Stars
 }
 
 // User - пользователя Telegram (не domain.User)
@@ -48,6 +50,48 @@ type Chat struct {
 	Username  *string `json:"username,omitempty"`
 	FirstName *string `json:"first_name,omitempty"`
 	LastName  *string `json:"last_name,omitempty"`
+}
+
+// PreCheckoutQuery - запрос на подтверждение платежа (Telegram Stars)
+// Документация: https://core.telegram.org/bots/api#precheckoutquery
+type PreCheckoutQuery struct {
+	ID               string        `json:"id"`
+	From             *TelegramUser `json:"from,omitempty"`
+	Currency         string        `json:"currency"`        // "XTR" для Stars
+	TotalAmount      int64         `json:"total_amount"`    // количество звёзд
+	InvoicePayload   string        `json:"invoice_payload"` // payload, который мы передали при создании invoice
+	ShippingOptionID *string       `json:"shipping_option_id,omitempty"`
+	OrderInfo        *OrderInfo    `json:"order_info,omitempty"`
+}
+
+// SuccessfulPayment - успешный платёж (Telegram Stars)
+// Документация: https://core.telegram.org/bots/api#successfulpayment
+type SuccessfulPayment struct {
+	Currency                string     `json:"currency"`                             // "XTR" для Stars
+	TotalAmount             int64      `json:"total_amount"`                         // количество звёзд
+	InvoicePayload          string     `json:"invoice_payload"`                      // payload, который мы передали при создании invoice
+	TelegramPaymentChargeID string     `json:"telegram_payment_charge_id"`           // ID платежа в системе Telegram
+	ProviderPaymentChargeID *string    `json:"provider_payment_charge_id,omitempty"` // для внешних провайдеров
+	ShippingOptionID        *string    `json:"shipping_option_id,omitempty"`
+	OrderInfo               *OrderInfo `json:"order_info,omitempty"`
+}
+
+// OrderInfo - информация о заказе (опционально)
+type OrderInfo struct {
+	Name            *string          `json:"name,omitempty"`
+	PhoneNumber     *string          `json:"phone_number,omitempty"`
+	Email           *string          `json:"email,omitempty"`
+	ShippingAddress *ShippingAddress `json:"shipping_address,omitempty"`
+}
+
+// ShippingAddress - адрес доставки (опционально)
+type ShippingAddress struct {
+	CountryCode string  `json:"country_code"`
+	State       *string `json:"state,omitempty"`
+	City        string  `json:"city"`
+	StreetLine1 string  `json:"street_line1"`
+	StreetLine2 *string `json:"street_line2,omitempty"`
+	PostCode    string  `json:"post_code"`
 }
 
 // Entity - сущность в сообщении (команда, упоминание и т.д.)
