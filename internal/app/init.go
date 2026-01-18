@@ -344,6 +344,19 @@ func (a *App) initJobScheduler(
 		subscriptionExpirer := jobScheduler.NewSubscriptionExpirer(astroUseCase, a.Log)
 		scheduler.Register(subscriptionExpirer)
 		a.Log.Info("subscription expirer job registered")
+
+		// Регистрируем джобы для отправки пушей
+		weeklyForecastPush := jobScheduler.NewWeeklyForecastPush(astroUseCase, a.Log)
+		scheduler.Register(weeklyForecastPush)
+		a.Log.Info("weekly forecast push job registered")
+
+		situationalWarningPush := jobScheduler.NewSituationalWarningPush(astroUseCase, a.Log)
+		scheduler.Register(situationalWarningPush)
+		a.Log.Info("situational warning push job registered")
+
+		premiumLimitPush := jobScheduler.NewPremiumLimitPush(astroUseCase, a.Log)
+		scheduler.Register(premiumLimitPush)
+		a.Log.Info("premium limit push job registered")
 	}
 
 	return scheduler

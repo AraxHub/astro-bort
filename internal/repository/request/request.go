@@ -21,6 +21,7 @@ type requestColumns struct {
 	UserID       string
 	BotID        string
 	TGUpdateID   string
+	RequestType  string
 	RequestText  string
 	ResponseText string
 	CreatedAt    string
@@ -40,6 +41,7 @@ func New(db persistence.Persistence, log *slog.Logger) ports.IRequestRepo {
 		UserID:       "user_id",
 		BotID:        "bot_id",
 		TGUpdateID:   "tg_update_id",
+		RequestType:  "request_type",
 		RequestText:  "request_text",
 		ResponseText: "response",
 		CreatedAt:    "created_at",
@@ -53,11 +55,12 @@ func New(db persistence.Persistence, log *slog.Logger) ports.IRequestRepo {
 
 // allColumns возвращает строку со всеми колонками
 func (r *Repository) allColumns() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s",
+	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s",
 		r.columns.ID,
 		r.columns.UserID,
 		r.columns.BotID,
 		r.columns.TGUpdateID,
+		r.columns.RequestType,
 		r.columns.RequestText,
 		r.columns.ResponseText,
 		r.columns.CreatedAt)
@@ -65,12 +68,13 @@ func (r *Repository) allColumns() string {
 
 // Create создаёт новый запрос
 func (r *Repository) Create(ctx context.Context, request *domain.Request) error {
-	query := fmt.Sprintf(`INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES ($1, $2, $3, $4, $5, $6)`,
+	query := fmt.Sprintf(`INSERT INTO %s (%s, %s, %s, %s, %s, %s, %s) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		r.columns.TableName,
 		r.columns.ID,
 		r.columns.UserID,
 		r.columns.BotID,
 		r.columns.TGUpdateID,
+		r.columns.RequestType,
 		r.columns.RequestText,
 		r.columns.CreatedAt)
 	err := r.db.Exec(ctx, query,
@@ -78,6 +82,7 @@ func (r *Repository) Create(ctx context.Context, request *domain.Request) error 
 		request.UserID,
 		request.BotID,
 		request.TGUpdateID,
+		request.RequestType,
 		request.RequestText,
 		request.CreatedAt)
 	if err != nil {
@@ -210,12 +215,13 @@ func (r *Repository) WithTransaction(ctx context.Context, fn func(context.Contex
 
 // CreateTx создаёт запрос в транзакции
 func (r *Repository) CreateTx(ctx context.Context, tx persistence.Transaction, request *domain.Request) error {
-	query := fmt.Sprintf(`INSERT INTO %s (%s, %s, %s, %s, %s, %s) VALUES ($1, $2, $3, $4, $5, $6)`,
+	query := fmt.Sprintf(`INSERT INTO %s (%s, %s, %s, %s, %s, %s, %s) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
 		r.columns.TableName,
 		r.columns.ID,
 		r.columns.UserID,
 		r.columns.BotID,
 		r.columns.TGUpdateID,
+		r.columns.RequestType,
 		r.columns.RequestText,
 		r.columns.CreatedAt)
 	err := tx.Exec(ctx, query,
@@ -223,6 +229,7 @@ func (r *Repository) CreateTx(ctx context.Context, tx persistence.Transaction, r
 		request.UserID,
 		request.BotID,
 		request.TGUpdateID,
+		request.RequestType,
 		request.RequestText,
 		request.CreatedAt)
 	if err != nil {

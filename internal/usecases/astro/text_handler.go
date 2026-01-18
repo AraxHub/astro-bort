@@ -361,6 +361,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		UserID:      user.ID,
 		BotID:       botID,
 		TGUpdateID:  &updateID,
+		RequestType: domain.RequestTypeUser, // обычный запрос от пользователя
 		RequestText: text,
 		CreatedAt:   time.Now(),
 	}
