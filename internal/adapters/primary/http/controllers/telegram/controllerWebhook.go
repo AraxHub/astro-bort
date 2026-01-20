@@ -24,12 +24,13 @@ func New(TgService *telegramService.Service, log *slog.Logger) *Controller {
 func (c *Controller) RegisterRoutes(router *gin.Engine) {
 	router.POST("/webhook", c.handleWebhook)
 }
-
+//TODO fix на стороне бизнес-логики с флоу даты рождения, временное решение, чтобы не зациклить бота
 func (c *Controller) handleWebhook(ctx *gin.Context) {
 	secretToken := ctx.GetHeader("X-Telegram-Bot-Api-Secret-Token")
 	if secretToken == "" {
 		c.Log.Error("secret token is required")
-		ctx.JSON(http.StatusUnauthorized, gin.H{"error": "secret token required"})
+		// Возвращаем 200, чтобы Telegram не повторял запрос
+		ctx.JSON(http.StatusOK, gin.H{"ok": false, "error": "secret token required"})
 		return
 	}
 
@@ -40,7 +41,8 @@ func (c *Controller) handleWebhook(ctx *gin.Context) {
 			"bot_id", botID,
 			"error", err,
 		)
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "unknown bot_id"})
+		// Возвращаем 200, чтобы Telegram не повторял запрос
+		ctx.JSON(http.StatusOK, gin.H{"ok": false, "error": "unknown bot_id"})
 		return
 	}
 
@@ -51,7 +53,8 @@ func (c *Controller) handleWebhook(ctx *gin.Context) {
 			"error", err,
 			"bot_id", botID,
 		)
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		// Возвращаем 200, чтобы Telegram не повторял запрос
+		ctx.JSON(http.StatusOK, gin.H{"ok": false, "error": "invalid request"})
 		return
 	}
 
@@ -66,7 +69,8 @@ func (c *Controller) handleWebhook(ctx *gin.Context) {
 				"error", err,
 				"bot_id", botID)
 		}
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to process update"})
+		// Возвращаем 200, чтобы Telegram не повторял запрос
+		ctx.JSON(http.StatusOK, gin.H{"ok": false, "error": "failed to process update"})
 		return
 	}
 
