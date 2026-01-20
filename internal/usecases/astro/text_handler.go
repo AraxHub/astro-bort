@@ -249,7 +249,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 	// Пользователь платный, если оплатил (is_paid) или получил доступ вручную (manual_granted)
 	isPaidUser := user.IsPaid || user.ManualGranted
 	if !isPaidUser && user.FreeMsgCount >= s.FreeMessagesLimit {
-		message := "🐱 Ой, у меня кончился корм! Я больше не могу отвечать на вопросы бесплатно. Оплатишь корм? 🌟"
+		message := "🐱 Ой, у меня кончился корм! Я больше не могу отвечать на вопросы бесплатно. Оплатишь корм? 🌟\n\nПитания можно купить у @Premium"
 		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, message); sendErr != nil {
 			s.Log.Warn("failed to send payment request message", "error", sendErr)
 		}
