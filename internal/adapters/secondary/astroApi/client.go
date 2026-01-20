@@ -61,6 +61,14 @@ func (c *Client) buildURL(endpoint string) string {
 	return baseURL + "/" + path.Join(c.cfg.ApiVersion, endpoint)
 }
 
+// setHeaders устанавливает стандартные заголовки для запросов к API
+func (c *Client) setHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	if c.cfg.ApiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.cfg.ApiKey)
+	}
+}
+
 // CalculateNatalChart рассчитывает натальную карту через API
 func (c *Client) CalculateNatalChart(ctx context.Context, req NatalChartRequest) (*NatalChartResponse, error) {
 	jsonData, err := json.Marshal(req)
@@ -74,7 +82,7 @@ func (c *Client) CalculateNatalChart(ctx context.Context, req NatalChartRequest)
 		return nil, fmt.Errorf("ошибка создания запроса: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
+	c.setHeaders(httpReq)
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -127,7 +135,7 @@ func (c *Client) GetNatalReport(ctx context.Context, req NatalChartRequest) ([]b
 		return nil, fmt.Errorf("ошибка создания запроса: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
+	c.setHeaders(httpReq)
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
@@ -156,7 +164,7 @@ func (c *Client) GetPositions(ctx context.Context, req PositionsRequest) (*Posit
 		return nil, fmt.Errorf("ошибка создания запроса: %w", err)
 	}
 
-	httpReq.Header.Set("Content-Type", "application/json")
+	c.setHeaders(httpReq)
 
 	resp, err := c.HTTPClient.Do(httpReq)
 	if err != nil {
