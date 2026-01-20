@@ -3,11 +3,11 @@ package astro
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"time"
 
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
+	"github.com/admin/tg-bots/astro-bot/internal/usecases/astro/texts"
 	"github.com/google/uuid"
 )
 
@@ -84,7 +84,7 @@ func (s *Service) isBirthDateInput(text string) bool {
 // handleBirthDateInput обрабатывает ввод даты рождения
 // Формат: ДД.ММ.ГГГГ чч:мм Город, КодСтраны или ДД.ММ.ГГГГ чч:мм Город
 func (s *Service) handleBirthDateInput(ctx context.Context, botID domain.BotId, user *domain.User, text string) error {
-	if err := s.sendMessage(ctx, botID, user.TelegramChatID, "✨ Рассчитываю твою натальную карту..."); err != nil {
+	if err := s.sendMessage(ctx, botID, user.TelegramChatID, texts.BirthDateCalculating); err != nil {
 		s.Log.Warn("failed to send calculation message",
 			"error", err,
 			"user_id", user.ID,
@@ -99,37 +99,23 @@ func (s *Service) handleBirthDateInput(ctx context.Context, botID domain.BotId, 
 	// Разделяем по пробелам
 	parts := strings.Fields(text)
 	if len(parts) < 3 {
-		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"❌ Неверный формат\n\n"+
-				"Используй формат:\n"+
-				"`ДД.ММ.ГГГГ чч:мм Город, КодСтраны`\n\n"+
-				"Пример:\n"+
-				"`15.03.1990 14:30 Москва, RU`")
+		return s.sendMessage(ctx, botID, user.TelegramChatID, texts.BirthDateInvalidFormat)
 	}
 
 	birthDateTime, err := s.parseBirthDateTime(parts[0], parts[1])
 	if err != nil {
-		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"❌ Неверный формат даты или времени\n\n"+
-				"Используй формат:\n"+
-				"`ДД.ММ.ГГГГ чч:мм Город, КодСтраны`\n\n"+
-				"Пример:\n"+
-				"`15.03.1990 14:30 Москва, RU`")
+		return s.sendMessage(ctx, botID, user.TelegramChatID, texts.BirthDateInvalidDateTime)
 	}
 
 	// Проверяем, что дата не в будущем
 	if birthDateTime.After(time.Now()) {
-		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"❌ Дата рождения не может быть в будущем")
+		return s.sendMessage(ctx, botID, user.TelegramChatID, texts.BirthDateFuture)
 	}
 
 	// Парсим место рождения (объединяем все части после времени)
 	birthPlace := strings.Join(parts[2:], " ")
 	if birthPlace == "" {
-		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"❌ Не указано место рождения\n\n"+
-				"Используй формат:\n"+
-				"`ДД.ММ.ГГГГ чч:мм Город, КодСтраны`")
+		return s.sendMessage(ctx, botID, user.TelegramChatID, texts.BirthDateNoPlace)
 	}
 
 	// Сохраняем данные рождения
@@ -148,7 +134,7 @@ func (s *Service) handleBirthDateInput(ctx context.Context, botID domain.BotId, 
 			"error", err,
 			"user_id", user.ID,
 		)
-		return s.sendMessage(ctx, botID, user.TelegramChatID, "❌ Ошибка при сохранении данных")
+		return s.sendMessage(ctx, botID, user.TelegramChatID, texts.ErrorSaveData)
 	}
 
 	// Получаем натальную карту
@@ -158,25 +144,20 @@ func (s *Service) handleBirthDateInput(ctx context.Context, botID domain.BotId, 
 			"user_id", user.ID,
 		)
 		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"✅ Данные приняты:\n"+
-				fmt.Sprintf("📅 Дата: %s\n", birthDateTime.Format("02.01.2006"))+
-				fmt.Sprintf("🕐 Время: %s\n", birthDateTime.Format("15:04"))+
-				fmt.Sprintf("📍 Место: %s\n\n", birthPlace)+
-				"⚠️ Можно изменить в течение 24ч\n\n"+
-				"❌ Не удалось рассчитать натальную карту. Попробуй позже через /reset_birth_data.")
+			texts.FormatBirthDateSuccessButChartError(
+				birthDateTime.Format("02.01.2006"),
+				birthDateTime.Format("15:04"),
+				birthPlace,
+			))
 	}
 
 	// Отправляем финальное сообщение об успехе
 	return s.sendMessage(ctx, botID, user.TelegramChatID,
-		"🎉 Готово! Твоя натальная карта рассчитана!\n\n"+
-			"✅ Данные:\n"+
-			fmt.Sprintf("📅 Дата: %s\n", birthDateTime.Format("02.01.2006"))+
-			fmt.Sprintf("🕐 Время: %s\n", birthDateTime.Format("15:04"))+
-			fmt.Sprintf("📍 Место: %s\n\n", birthPlace)+
-			"⚠️ Можно изменить в течение 24ч\n\n"+
-			"Теперь можешь задавать вопросы, и я буду отвечать на основе твоей карты.\n\n"+
-			"💡 Помни: я работаю только с твоей картой, поэтому задавай вопросы от своего лица.\n\n"+
-			"Начни с любого вопроса! 🚀")
+		texts.FormatBirthDateSuccess(
+			birthDateTime.Format("02.01.2006"),
+			birthDateTime.Format("15:04"),
+			birthPlace,
+		))
 }
 
 // parseBirthDateTime парсит дату и время из формата ДД.ММ.ГГГГ чч:мм
@@ -214,9 +195,7 @@ func (s *Service) parseBirthDateTime(dateStr, timeStr string) (time.Time, error)
 func (s *Service) confirmResetBirthData(ctx context.Context, botID domain.BotId, user *domain.User) error {
 	// Проверяем ещё раз, можно ли изменить
 	if user.BirthDataCanChangeUntil == nil || time.Now().After(*user.BirthDataCanChangeUntil) {
-		return s.sendMessage(ctx, botID, user.TelegramChatID,
-			"❌ Дата заблокирована\n"+
-				"Обратись к администратору")
+		return s.sendMessage(ctx, botID, user.TelegramChatID, texts.ResetBirthDataLockedShort)
 	}
 
 	// Сбрасываем данные
@@ -232,15 +211,10 @@ func (s *Service) confirmResetBirthData(ctx context.Context, botID domain.BotId,
 			"error", err,
 			"user_id", user.ID,
 		)
-		return s.sendMessage(ctx, botID, user.TelegramChatID, "❌ Ошибка при сбросе данных")
+		return s.sendMessage(ctx, botID, user.TelegramChatID, texts.ErrorResetData)
 	}
 
-	message := "✅ Дата рождения и натальная карта сброшены\n\n" +
-		"Введи новые данные в формате:\n\n" +
-		"`ДД.ММ.ГГГГ чч:мм Город, КодСтраны`\n\n" +
-		"Пример:\n" +
-		"```\n15.03.1990 14:30 Москва, RU\n```"
-	return s.sendMessageWithMarkdown(ctx, botID, user.TelegramChatID, message)
+	return s.sendMessageWithMarkdown(ctx, botID, user.TelegramChatID, texts.ResetBirthDataSuccess)
 }
 
 // handleUserQuestion обрабатывает вопрос пользователя
@@ -249,16 +223,15 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 	// Пользователь платный, если оплатил (is_paid) или получил доступ вручную (manual_granted)
 	isPaidUser := user.IsPaid || user.ManualGranted
 	if !isPaidUser && user.FreeMsgCount >= s.FreeMessagesLimit {
-		message := "🐱 Ой, у меня кончился корм! Я больше не могу отвечать на вопросы бесплатно. Оплатишь корм? 🌟\n\nПитания можно купить у @Premium"
-		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, message); sendErr != nil {
+		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, texts.PaymentLimitReached); sendErr != nil {
 			s.Log.Warn("failed to send payment request message", "error", sendErr)
 		}
 
 		// Создаём платеж (invoice отправится автоматически)
 		if s.PaymentService != nil {
 			productID := "monthly_feed"
-			productTitle := "Корм для Киты (месяц)"
-			description := "Платёж за месяц безлимитных ответов от Киты"
+			productTitle := texts.BuyMonthlyFeedTitle
+			description := texts.BuyMonthlyFeedDescription
 			amount := s.StarsPrice
 
 			_, paymentErr := s.PaymentService.CreatePayment(
@@ -347,9 +320,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 				"user_id", user.ID,
 			)
 			originalErr := err
-			if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID,
-				"❌ Натальная карта не найдена\n"+
-					"Используй /start для настройки"); sendErr != nil {
+			if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, texts.ErrorNatalChartNotFound); sendErr != nil {
 				s.Log.Warn("failed to notify user about error", "error", sendErr)
 			}
 			return originalErr
@@ -377,7 +348,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 			"update_id", updateID,
 		)
 		originalErr := err
-		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, "❌ Ошибка при создании запроса"); sendErr != nil {
+		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, texts.ErrorCreateRequest); sendErr != nil {
 			s.Log.Warn("failed to notify user about error", "error", sendErr)
 		}
 		return originalErr
@@ -409,8 +380,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 			"request_id", requestID,
 		)
 		originalErr := err
-		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID,
-			"❌ Ошибка при получении натального отчёта\nПопробуй позже или используй /start"); sendErr != nil {
+		if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, texts.ErrorGetNatalReport); sendErr != nil {
 			s.Log.Warn("failed to notify user about error", "error", sendErr)
 		}
 		return originalErr
@@ -432,8 +402,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 				"user_id", user.ID,
 			)
 			originalErr := err
-			if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID,
-				"❌ Ошибка при отправке запроса\nПопробуй позже"); sendErr != nil {
+			if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, texts.ErrorSendRequest); sendErr != nil {
 				s.Log.Warn("failed to notify user about error", "error", sendErr)
 			}
 			return originalErr
@@ -460,6 +429,5 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		)
 	}
 
-	return s.sendMessage(ctx, botID, user.TelegramChatID,
-		"✅ Запрос получен\nОбрабатываю...")
+	return s.sendMessage(ctx, botID, user.TelegramChatID, texts.UserQuestionReceived)
 }

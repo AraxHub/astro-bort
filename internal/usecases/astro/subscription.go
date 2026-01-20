@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
+	"github.com/admin/tg-bots/astro-bot/internal/usecases/astro/texts"
 )
 
 // RevokeExpiredSubscriptions обрабатывает истёкшие подписки: отзывает их и уведомляет пользователей
@@ -69,8 +70,7 @@ func (s *Service) RevokeExpiredSubscriptions(ctx context.Context) error {
 			continue
 		}
 
-		message := fmt.Sprintf("🐱 Ой, я всё съела! За 30 дней подписка закончилась 🎉\n\n"+
-			"🆓 У тебя осталось %d бесплатных сообщений 🐱", s.FreeMessagesLimit)
+		message := texts.FormatSubscriptionExpired(s.FreeMessagesLimit)
 
 		if sendErr := s.sendMessage(ctx, domain.BotId(botID), user.TelegramChatID, message); sendErr != nil {
 			s.Log.Warn("failed to send subscription expiry notification",

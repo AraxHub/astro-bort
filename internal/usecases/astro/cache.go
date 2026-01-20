@@ -7,9 +7,6 @@ import (
 )
 
 // UpdateCachedPositions обновляет актуальные позиции планет в кеше Redis.
-// Использует фиксированный ключ astro:positions:current с TTL 25 часов.
-// Предназначен для вызова из воркера, который обновляет данные раз в 24 часа.
-// Возвращает ошибку, если не удалось запросить API или записать в кеш.
 func (s *Service) UpdateCachedPositions(ctx context.Context, dateTime time.Time) error {
 	const cacheKey = "astro:positions:current"
 
