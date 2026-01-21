@@ -284,7 +284,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 				ID:           uuid.New(),
 				ObjectType:   domain.ObjectTypeRequest,
 				ObjectID:     requestID,
-				Status:       domain.RequestError,
+				Status:       domain.StatusStatus(domain.RequestError),
 				ErrorMessage: &errMsg,
 				Metadata:     statusMetadata,
 				CreatedAt:    time.Now(),
@@ -302,7 +302,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 				ID:         uuid.New(),
 				ObjectType: domain.ObjectTypeRequest,
 				ObjectID:   requestID,
-				Status:     domain.RequestSentToRAG,
+				Status:     domain.StatusStatus(domain.RequestSentToRAG),
 				Metadata:   statusMetadata,
 				CreatedAt:  time.Now(),
 			}

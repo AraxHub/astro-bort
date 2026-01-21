@@ -9,6 +9,7 @@ import (
 	"github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/repository"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
+	"github.com/admin/tg-bots/astro-bot/internal/ports/usecase"
 )
 
 // Service бизнес-логика астро-бота
@@ -20,7 +21,7 @@ type Service struct {
 	AstroAPIService   service.IAstroAPIService
 	KafkaProducer     kafka.IKafkaProducer
 	AlerterService    service.IAlerterService
-	PaymentService    service.IPaymentService // опциональный, для платежей
+	PaymentService    usecase.IPaymentUseCase // опциональный, для платежей
 	PaymentRepo       repository.IPaymentRepo // опциональный, для получения данных о платежах
 	Cache             cache.Cache
 	FreeMessagesLimit int   // лимит бесплатных сообщений
@@ -59,7 +60,7 @@ func New(
 }
 
 // SetPaymentService устанавливает payment service (опционально)
-func (s *Service) SetPaymentService(paymentService service.IPaymentService) {
+func (s *Service) SetPaymentService(paymentService usecase.IPaymentUseCase) {
 	s.PaymentService = paymentService
 }
 

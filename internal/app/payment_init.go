@@ -37,6 +37,7 @@ func (a *App) initPayment(
 	paymentUseCase := paymentUsecase.New(
 		repos.Payment,
 		repos.User,
+		repos.Status,
 		paymentProvider,
 		tgService,
 		alerterSvc, // может быть nil

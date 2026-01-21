@@ -35,7 +35,7 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 				ID:           uuid.New(),
 				ObjectType:   domain.ObjectTypeRequest,
 				ObjectID:     requestID,
-				Status:       domain.RequestError,
+				Status:       domain.StatusStatus(domain.RequestError),
 				ErrorMessage: &errMsg,
 				Metadata:     metadata,
 				CreatedAt:    time.Now(),
@@ -53,7 +53,7 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 				ID:         uuid.New(),
 				ObjectType: domain.ObjectTypeRequest,
 				ObjectID:   requestID,
-				Status:     domain.RequestCompleted,
+				Status:     domain.StatusStatus(domain.RequestCompleted),
 				Metadata:   statusMetadata,
 				CreatedAt:  time.Now(),
 			}

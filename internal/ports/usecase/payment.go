@@ -1,4 +1,4 @@
-package service
+package usecase
 
 import (
 	"context"
@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 )
 
-// IPaymentService интерфейс для работы с платежами (для использования в других use cases)
-type IPaymentService interface {
+// IPaymentUseCase интерфейс для работы с платежами (use case слой)
+type IPaymentUseCase interface {
 	CreatePayment(
 		ctx context.Context,
 		botID domain.BotId,

@@ -40,7 +40,7 @@ func (s *Service) formatAlertMessage(status *domain.Status) string {
 
 	requestID := status.ObjectID.String()
 
-	switch status.Status {
+	switch domain.RequestStatus(status.Status) {
 	case domain.RequestError:
 		builder.WriteString(fmt.Sprintf(infoString, members))
 		builder.WriteString(fmt.Sprintf("🆔 Request ID: `%s`\n", requestID))
