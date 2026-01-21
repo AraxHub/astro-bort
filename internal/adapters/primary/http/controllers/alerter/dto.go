@@ -58,3 +58,9 @@ type RailwayService struct {
 type RailwayDeployment struct {
 	ID string `json:"id"`
 }
+
+// GenericAlertPayload универсальный payload для алертов в свободной форме
+type GenericAlertPayload struct {
+	Message string `json:"message" binding:"required"` // Текст сообщения (обязательно)
+	Source  string `json:"source"`                     // Источник алерта (опционально, например "monitoring", "cron", "external-service")
+}

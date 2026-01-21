@@ -1,6 +1,7 @@
 package alerter
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -24,6 +25,7 @@ func New(alerterService service.IAlerterService, log *slog.Logger) *Controller {
 
 func (c *Controller) RegisterRoutes(router *gin.Engine) {
 	router.POST("/webhooks/railway", c.handleRailwayWebhook)
+	router.POST("/webhooks/alert", c.handleGenericAlert)
 }
 
 func (c *Controller) handleRailwayWebhook(ctx *gin.Context) {
@@ -193,3 +195,50 @@ func formatStatus(status string) string {
 	}
 }
 
+// handleGenericAlert обрабатывает универсальный алерт в свободной форме
+func (c *Controller) handleGenericAlert(ctx *gin.Context) {
+	var payload GenericAlertPayload
+
+	if err := ctx.ShouldBindJSON(&payload); err != nil {
+		c.Log.Warn("failed to bind generic alert request",
+			"error", err,
+		)
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid request", "details": err.Error()})
+		return
+	}
+
+	// Валидация: message обязателен
+	if payload.Message == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		return
+	}
+
+	c.Log.Debug("received generic alert",
+		"message_length", len(payload.Message),
+		"source", payload.Source,
+	)
+
+	if c.AlerterService == nil {
+		c.Log.Info("alerter service not configured, skipping alert",
+			"source", payload.Source,
+		)
+		ctx.JSON(http.StatusOK, gin.H{"ok": true, "message": "alerter not configured"})
+		return
+	}
+
+	message := payload.Message
+	if payload.Source != "" {
+		message = fmt.Sprintf("🔔 Источник алерта: %s\n\n Сообщение:%s", payload.Source, payload.Message)
+	}
+
+	if err := c.AlerterService.SendAlert(ctx.Request.Context(), message); err != nil {
+		c.Log.Warn("failed to send alert",
+			"error", err,
+			"source", payload.Source,
+		)
+		ctx.JSON(http.StatusOK, gin.H{"ok": false, "error": "failed to send alert"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"ok": true})
+}
