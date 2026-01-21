@@ -61,9 +61,10 @@ func RunMigrations(db *sqlx.DB, logger *slog.Logger) error {
 }
 
 type migration struct {
-	Version int64
-	Name    string
-	Content string
+	Version       int64
+	Name          string
+	Content       string
+	NoTransaction bool // Если true, миграция выполняется вне транзакции (для ALTER TYPE и т.д.)
 }
 
 // getMigrations читает все SQL файлы из директории migrations и сортирует их по версии
@@ -92,10 +93,15 @@ func getMigrations() ([]migration, error) {
 			return nil, fmt.Errorf("failed to read migration %s: %w", entry.Name(), err)
 		}
 
+		contentStr := string(content)
+		// Проверяем, содержит ли миграция маркер для выполнения вне транзакции
+		noTransaction := strings.Contains(contentStr, "-- NO_TRANSACTION")
+
 		migrations = append(migrations, migration{
-			Version: version,
-			Name:    name,
-			Content: string(content),
+			Version:       version,
+			Name:          name,
+			Content:       contentStr,
+			NoTransaction: noTransaction,
 		})
 	}
 
@@ -128,6 +134,22 @@ func parseMigrationName(filename string) (int64, string, error) {
 
 // applyMigration применяет миграцию к БД
 func applyMigration(db *sqlx.DB, m migration) error {
+	if m.NoTransaction {
+		// Выполняем миграцию вне транзакции (для ALTER TYPE и т.д.)
+		if _, err := db.Exec(m.Content); err != nil {
+			return fmt.Errorf("failed to execute migration: %w", err)
+		}
+		// Отмечаем как dirty на случай ошибки
+		if err := markDirty(db, m.Version, true); err != nil {
+			return fmt.Errorf("failed to mark dirty: %w", err)
+		}
+		// Убираем dirty флаг после успешного выполнения
+		if err := markDirty(db, m.Version, false); err != nil {
+			return fmt.Errorf("failed to unmark dirty: %w", err)
+		}
+		return nil
+	}
+
 	// Выполняем миграцию в транзакции
 	tx, err := db.Beginx()
 	if err != nil {
