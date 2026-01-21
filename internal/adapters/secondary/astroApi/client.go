@@ -148,6 +148,16 @@ func (c *Client) GetNatalReport(ctx context.Context, req NatalChartRequest) ([]b
 		return nil, fmt.Errorf("ошибка чтения ответа: %w", err)
 	}
 
+	rawJSON := string(body)
+
+	if resp.StatusCode != http.StatusOK {
+		c.Log.Debug("astro API returned non-200 status for natal report",
+			"status_code", resp.StatusCode,
+			"body_preview", truncateString(rawJSON, 200),
+		)
+		return nil, fmt.Errorf("astro API error [status=%d]: %s", resp.StatusCode, truncateString(rawJSON, 500))
+	}
+
 	return body, nil
 }
 
@@ -179,6 +189,14 @@ func (c *Client) GetPositions(ctx context.Context, req PositionsRequest) (*Posit
 
 	// Сохраняем оригинальный JSON ответ
 	rawJSON := string(body)
+
+	if resp.StatusCode != http.StatusOK {
+		c.Log.Debug("astro API returned non-200 status for positions",
+			"status_code", resp.StatusCode,
+			"body_preview", truncateString(rawJSON, 200),
+		)
+		return nil, fmt.Errorf("astro API error [status=%d]: %s", resp.StatusCode, truncateString(rawJSON, 500))
+	}
 
 	return &PositionsResponse{
 		RawJSON: rawJSON,

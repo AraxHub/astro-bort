@@ -20,9 +20,36 @@ func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User)
 
 	natalReport, err := s.AstroAPIService.GetNatalReport(ctx, *user.BirthDateTime, *user.BirthPlace)
 	if err != nil {
+		// Алертим об ошибке получения натальной карты
+		if s.AlerterService != nil {
+			alertMsg := fmt.Sprintf("❌ Отъебнула астро-апи\n\n@nhoj41_3 @matarseks @romanovnl\n\nFailed to get natal report\nUser ID: `%s`\nChat ID: `%d`\nBirth Date: %s\nBirth Place: %s\nError: %s",
+				user.ID, user.TelegramChatID,
+				user.BirthDateTime.Format("02.01.2006 15:04"),
+				*user.BirthPlace,
+				err.Error())
+			if alertErr := s.AlerterService.SendAlert(ctx, alertMsg); alertErr != nil {
+				s.Log.Warn("failed to send alert for natal chart error", "error", alertErr)
+			}
+		}
 		return fmt.Errorf("failed to get natal report: %w", err)
 	}
 
+	// Проверяем, что ответ не пустой (на случай если API вернул 200 но пустой body)
+	if len(natalReport) == 0 {
+		err := fmt.Errorf("astro API returned empty response")
+		if s.AlerterService != nil {
+			alertMsg := fmt.Sprintf("❌ Отъебнула астро-апи\n\n@nhoj41_3 @matarseks @romanovnl\n\nFailed to get natal report\nUser ID: `%s`\nChat ID: `%d`\nBirth Date: %s\nBirth Place: %s",
+				user.ID, user.TelegramChatID,
+				user.BirthDateTime.Format("02.01.2006 15:04"),
+				*user.BirthPlace)
+			if alertErr := s.AlerterService.SendAlert(ctx, alertMsg); alertErr != nil {
+				s.Log.Warn("failed to send alert for empty response", "error", alertErr)
+			}
+		}
+		return err
+	}
+
+	// Сохраняем в Redis только если ответ валидный
 	if s.Cache != nil {
 		cacheKey := fmt.Sprintf("astro:natal:%d", user.TelegramChatID)
 		ttl := 24 * time.Hour
@@ -43,6 +70,7 @@ func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User)
 		}
 	}
 
+	// Сохраняем в БД только если ответ валидный
 	now := time.Now()
 	user.NatalChart = natalReport
 	user.NatalChartFetchedAt = &now
