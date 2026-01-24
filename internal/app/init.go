@@ -9,7 +9,6 @@ import (
 	alerterController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/alerter"
 	healthcheckController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/healthcheck"
 	telegramController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/telegram"
-	testController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/test"
 	kafkaConsumerAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/kafka"
 	kafkaHandlers "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/kafka/handlers"
 	alerterAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/alerter"
@@ -26,14 +25,12 @@ import (
 	paymentRepo "github.com/admin/tg-bots/astro-bot/internal/repository/payment"
 	requestRepo "github.com/admin/tg-bots/astro-bot/internal/repository/request"
 	statusRepo "github.com/admin/tg-bots/astro-bot/internal/repository/status"
-	testRepo "github.com/admin/tg-bots/astro-bot/internal/repository/test"
 	userRepo "github.com/admin/tg-bots/astro-bot/internal/repository/user"
 	alerterService "github.com/admin/tg-bots/astro-bot/internal/services/alerter"
 	astroApiService "github.com/admin/tg-bots/astro-bot/internal/services/astroApi"
 	jobScheduler "github.com/admin/tg-bots/astro-bot/internal/services/jobs"
 	telegramService "github.com/admin/tg-bots/astro-bot/internal/services/telegram"
 	astroUsecase "github.com/admin/tg-bots/astro-bot/internal/usecases/astro"
-	testService "github.com/admin/tg-bots/astro-bot/internal/usecases/test"
 	"github.com/jmoiron/sqlx"
 )
 
@@ -68,7 +65,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		return nil, fmt.Errorf("failed to init kafka: %w", err)
 	}
 
-	astroUseCase, testService := a.initUseCases(repos, tgService, externalServices, kafkaProducers)
+	astroUseCase := a.initUseCases(repos, tgService, externalServices, kafkaProducers)
 	tgService.SetBotServices(map[domain.BotType]service.IBotService{
 		domain.BotTypeAstro: astroUseCase,
 	})
@@ -76,7 +73,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	// Инициализируем payment use case и интегрируем в telegram service и astro use case
 	a.initPayment(telegramClients, repos, tgService, externalServices.Alerter, astroUseCase)
 
-	httpServer := a.initHTTP(db, tgService, testService, externalServices.Alerter)
+	httpServer := a.initHTTP(db, tgService, externalServices.Alerter)
 	poller, err := a.initTelegramMode(ctx, tgService, telegramClients)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init telegram mode: %w", err)
@@ -102,7 +99,6 @@ type repositories struct {
 	User    repository.IUserRepo
 	Request repository.IRequestRepo
 	Status  repository.IStatusRepo
-	Test    repository.ITestRepo
 	Payment repository.IPaymentRepo
 }
 
@@ -113,7 +109,6 @@ func (a *App) initRepositories(db *sqlx.DB) *repositories {
 		User:    userRepo.New(persistenceLayer, a.Log),
 		Request: requestRepo.New(persistenceLayer, a.Log),
 		Status:  statusRepo.New(persistenceLayer, a.Log),
-		Test:    testRepo.New(persistenceLayer, a.Log),
 		Payment: paymentRepo.New(persistenceLayer, a.Log),
 	}
 }
@@ -243,10 +238,7 @@ func (a *App) initUseCases(
 	tgService *telegramService.Service,
 	externalServices *externalServices,
 	kafkaProducers map[string]*kafkaAdapter.Producer,
-) (
-	astroUseCase *astroUsecase.Service,
-	testUseCase *testService.Service,
-) {
+) *astroUsecase.Service {
 	var ragProducer *kafkaAdapter.Producer
 	if prod, ok := kafkaProducers["requests"]; ok {
 		ragProducer = prod
@@ -262,7 +254,7 @@ func (a *App) initUseCases(
 		}
 	}
 
-	astroUseCase = astroUsecase.New(
+	return astroUsecase.New(
 		repos.User,
 		repos.Request,
 		repos.Status,
@@ -275,22 +267,16 @@ func (a *App) initUseCases(
 		starsPrice,
 		a.Log,
 	)
-
-	testUseCase = testService.New(repos.Test, a.Log)
-
-	return astroUseCase, testUseCase
 }
 
 // initHTTP инициализирует HTTP сервер и контроллеры
 func (a *App) initHTTP(
 	db *sqlx.DB,
 	tgService *telegramService.Service,
-	testUseCase *testService.Service,
 	alerterSvc service.IAlerterService,
 ) *http.Server {
 	controllers := []server.Controller{
 		healthcheckController.New(db, a.Log),
-		testController.New(testUseCase, a.Log),
 		telegramController.New(tgService, a.Log),
 	}
 
