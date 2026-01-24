@@ -784,39 +784,39 @@ func (s *Service) formatPaymentAlertMessage(status *domain.Status) string {
 	switch domain.PaymentStatusEnum(status.Status) {
 	case domain.PaymentSucceeded:
 		// Успешный алерт только на получение денег
-		builder.WriteString("✅ *Payment Succeeded*\n\n")
-		builder.WriteString(fmt.Sprintf("*Payment ID:* `%s`\n", paymentID))
+		builder.WriteString("✅ Payment Succeeded\n\n")
+		builder.WriteString(fmt.Sprintf("Payment ID: `%s`\n", paymentID))
 
 		// Добавляем контекст из metadata если есть
 		if len(status.Metadata) > 0 {
 			var metadata map[string]interface{}
 			if err := json.Unmarshal(status.Metadata, &metadata); err == nil {
 				if userID, ok := metadata["user_id"].(string); ok {
-					builder.WriteString(fmt.Sprintf("*User ID:* `%s`\n", userID))
+					builder.WriteString(fmt.Sprintf("User ID: `%s`\n", userID))
 				}
 				if amount, ok := metadata["amount"].(float64); ok {
-					builder.WriteString(fmt.Sprintf("*Amount:* %.0f XTR\n", amount))
+					builder.WriteString(fmt.Sprintf("Amount: %.0f XTR\n", amount))
 				}
 				if productID, ok := metadata["product_id"].(string); ok {
-					builder.WriteString(fmt.Sprintf("*Product ID:* `%s`\n", productID))
+					builder.WriteString(fmt.Sprintf("Product ID: `%s`\n", productID))
 				}
 			}
 		}
 
 	case domain.PaymentError:
 		// Ошибки алертим всегда с @members
-		builder.WriteString(fmt.Sprintf("❌ *Payment Error*\n\n%s\n", "@nhoj41_3 @matarseks @romanovnl"))
-		builder.WriteString(fmt.Sprintf("*Payment ID:* `%s`\n", paymentID))
+		builder.WriteString(fmt.Sprintf("❌ Payment Error\n\n%s\n", "@nhoj41_3 @matarseks @romanovnl"))
+		builder.WriteString(fmt.Sprintf("Payment ID: `%s`\n", paymentID))
 
 		// Определяем этап из metadata
 		if len(status.Metadata) > 0 {
 			var metadata map[string]interface{}
 			if err := json.Unmarshal(status.Metadata, &metadata); err == nil {
 				if stage, ok := metadata["stage"].(string); ok {
-					builder.WriteString(fmt.Sprintf("*Stage:* `%s`\n", stage))
+					builder.WriteString(fmt.Sprintf("Stage: `%s`\n", stage))
 				}
 				if phase, ok := metadata["phase"].(string); ok {
-					builder.WriteString(fmt.Sprintf("*Phase:* `%s`\n", phase))
+					builder.WriteString(fmt.Sprintf("Phase: `%s`\n", phase))
 				}
 			}
 		}
@@ -824,7 +824,7 @@ func (s *Service) formatPaymentAlertMessage(status *domain.Status) string {
 		// Сообщение об ошибке
 		if status.ErrorMessage != nil {
 			errMsg := *status.ErrorMessage
-			builder.WriteString(fmt.Sprintf("*Error:* %s\n", errMsg))
+			builder.WriteString(fmt.Sprintf("Error: %s\n", errMsg))
 		}
 
 	default:
