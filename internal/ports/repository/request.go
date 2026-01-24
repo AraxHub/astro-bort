@@ -16,6 +16,7 @@ type IRequestRepo interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Request, error)
 	GetByUpdateID(ctx context.Context, updateID int64) (*domain.Request, error)
 	GetByUserID(ctx context.Context, userID uuid.UUID) ([]*domain.Request, error)
+	GetBotIDForUser(ctx context.Context, userID uuid.UUID) (domain.BotId, error)
 
 	BeginTx(ctx context.Context) (persistence.Transaction, error)
 	WithTransaction(ctx context.Context, fn func(context.Context, persistence.Transaction) error) error

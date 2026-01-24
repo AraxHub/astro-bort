@@ -584,3 +584,32 @@ func (r *Repository) RevokeExpiredSubscriptions(ctx context.Context) (int64, err
 		"rows_affected", rowsAffected)
 	return rowsAffected, nil
 }
+
+// GetUsersWithLastSeenOlderThan возвращает пользователей, у которых last_seen_at старше указанного количества часов или NULL
+func (r *Repository) GetUsersWithLastSeenOlderThan(ctx context.Context, hours int) ([]*domain.User, error) {
+	query := fmt.Sprintf(`
+		SELECT %s
+		FROM %s
+		WHERE (%s IS NULL OR %s < NOW() - INTERVAL '%d hours')
+		ORDER BY %s ASC NULLS LAST`,
+		r.allColumnsExceptNatalChart(),
+		r.columns.TableName,
+		r.columns.LastSeenAt,
+		r.columns.LastSeenAt,
+		hours,
+		r.columns.LastSeenAt,
+	)
+
+	var users []*domain.User
+	if err := r.db.Select(ctx, &users, query); err != nil {
+		r.Log.Error("failed to get users with last seen older than",
+			"error", err,
+			"hours", hours)
+		return nil, fmt.Errorf("failed to get users with last seen older than: %w", err)
+	}
+
+	r.Log.Debug("users with last seen older than retrieved",
+		"hours", hours,
+		"count", len(users))
+	return users, nil
+}

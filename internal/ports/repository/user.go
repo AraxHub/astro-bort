@@ -21,6 +21,7 @@ type IUserRepo interface {
 	SetPaidStatus(ctx context.Context, userID uuid.UUID, isPaid bool) error
 	GetUsersWithExpiredSubscriptions(ctx context.Context) ([]uuid.UUID, error)
 	RevokeExpiredSubscriptions(ctx context.Context) (int64, error)
+	GetUsersWithLastSeenOlderThan(ctx context.Context, hours int) ([]*domain.User, error)
 
 	BeginTx(ctx context.Context) (persistence.Transaction, error)
 	WithTransaction(ctx context.Context, fn func(context.Context, persistence.Transaction) error) error

@@ -22,6 +22,11 @@ func (s *Service) HandleUpdate(ctx context.Context, botID domain.BotId, update *
 		return s.HandlePreCheckoutQuery(ctx, botID, update.PreCheckoutQuery)
 	}
 
+	// Обрабатываем callback_query (для inline-кнопок)
+	if update.CallbackQuery != nil {
+		return s.HandleCallbackQuery(ctx, botID, update.CallbackQuery)
+	}
+
 	if update.Message != nil {
 		// Обрабатываем successful_payment (для платежей Stars)
 		if update.Message.SuccessfulPayment != nil {
@@ -29,6 +34,109 @@ func (s *Service) HandleUpdate(ctx context.Context, botID domain.BotId, update *
 		}
 
 		return s.HandleMessage(ctx, botID, update.Message, update.UpdateID)
+	}
+
+	return nil
+}
+
+// HandleCallbackQuery обрабатывает callback query от inline-кнопок
+func (s *Service) HandleCallbackQuery(ctx context.Context, botID domain.BotId, callbackQuery *domain.CallbackQuery) error {
+	if callbackQuery == nil || callbackQuery.From == nil {
+		s.Log.Error("callback_query is nil or has no from")
+		return fmt.Errorf("invalid callback_query")
+	}
+
+	if callbackQuery.Data == nil {
+		s.Log.Warn("callback_query has no data", "callback_id", callbackQuery.ID)
+		// Отвечаем на callback без текста, чтобы убрать индикатор загрузки
+		if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "", false); err != nil {
+			s.Log.Warn("failed to answer callback query", "error", err)
+		}
+		return nil
+	}
+
+	botType, err := s.GetBotType(botID)
+	if err != nil {
+		return fmt.Errorf("failed to get bot_type for bot_id %s: %w", botID, err)
+	}
+
+	botService, ok := s.BotTypeToUsecase[botType]
+	if !ok {
+		return fmt.Errorf("unknown bot_type: %s", botType)
+	}
+
+	// Получаем или создаём пользователя
+	user, err := botService.GetOrCreateUser(ctx, botID, callbackQuery.From, callbackQuery.Message.Chat)
+	if err != nil {
+		return domain.WrapBusinessError(fmt.Errorf("failed to get or create user: %w", err))
+	}
+
+	// Роутинг callback по data
+	callbackData := *callbackQuery.Data
+	if strings.HasPrefix(callbackData, "weekly_forecast:") {
+		// Обрабатываем callback для недельного прогноза
+		return s.handleWeeklyForecastCallback(ctx, botID, callbackQuery, user, callbackData)
+	}
+
+	// Неизвестный callback - отвечаем без текста
+	if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "", false); err != nil {
+		s.Log.Warn("failed to answer callback query", "error", err)
+	}
+
+	return nil
+}
+
+// handleWeeklyForecastCallback обрабатывает callback для недельного прогноза
+func (s *Service) handleWeeklyForecastCallback(ctx context.Context, botID domain.BotId, callbackQuery *domain.CallbackQuery, user *domain.User, callbackData string) error {
+	// Парсим user_id из callback_data (формат: "weekly_forecast:{user_id}")
+	parts := strings.Split(callbackData, ":")
+	if len(parts) != 2 {
+		s.Log.Warn("invalid weekly_forecast callback data format", "data", callbackData)
+		if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "Ошибка обработки запроса", false); err != nil {
+			s.Log.Warn("failed to answer callback query", "error", err)
+		}
+		return nil
+	}
+
+	callbackUserID, err := uuid.Parse(parts[1])
+	if err != nil {
+		s.Log.Warn("failed to parse user_id from callback data", "error", err, "data", callbackData)
+		if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "Ошибка обработки запроса", false); err != nil {
+			s.Log.Warn("failed to answer callback query", "error", err)
+		}
+		return nil
+	}
+
+	// Проверяем, что callback от того же пользователя
+	if user.ID != callbackUserID {
+		s.Log.Warn("callback user mismatch",
+			"callback_user_id", callbackUserID,
+			"actual_user_id", user.ID)
+		if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "Этот прогноз не для вас", false); err != nil {
+			s.Log.Warn("failed to answer callback query", "error", err)
+		}
+		return nil
+	}
+
+	// Отвечаем на callback (убираем индикатор загрузки)
+	if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "", false); err != nil {
+		s.Log.Warn("failed to answer callback query", "error", err)
+	}
+
+	// Получаем bot service для обработки
+	botType, err := s.GetBotType(botID)
+	if err != nil {
+		return fmt.Errorf("failed to get bot_type: %w", err)
+	}
+
+	botService, ok := s.BotTypeToUsecase[botType]
+	if !ok {
+		return fmt.Errorf("unknown bot_type: %s", botType)
+	}
+
+	// Вызываем метод обработки callback в usecase
+	if err := botService.HandleWeeklyForecastCallback(ctx, botID, user); err != nil {
+		return domain.WrapBusinessError(fmt.Errorf("failed to handle weekly forecast callback: %w", err))
 	}
 
 	return nil

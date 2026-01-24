@@ -288,3 +288,27 @@ func (r *Repository) GetByUpdateIDTx(ctx context.Context, tx persistence.Transac
 	r.Log.Debug("request retrieved in transaction", "tg_update_id", updateID, "request_id", request.ID)
 	return &request, nil
 }
+
+// GetBotIDForUser возвращает bot_id из последнего запроса пользователя
+func (r *Repository) GetBotIDForUser(ctx context.Context, userID uuid.UUID) (domain.BotId, error) {
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE %s = $1 ORDER BY %s DESC LIMIT 1`,
+		r.columns.BotID,
+		r.columns.TableName,
+		r.columns.UserID,
+		r.columns.CreatedAt,
+	)
+
+	var botID string
+	err := r.db.Get(ctx, &botID, query, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("no requests found for user")
+		}
+		r.Log.Error("failed to get bot_id for user",
+			"error", err,
+			"user_id", userID)
+		return "", fmt.Errorf("failed to get bot_id for user: %w", err)
+	}
+
+	return domain.BotId(botID), nil
+}
