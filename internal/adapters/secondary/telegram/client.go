@@ -369,3 +369,96 @@ func (c *Client) SetWebhook(ctx context.Context, url string, secretToken string)
 	)
 	return nil
 }
+
+// EditMessageReplyMarkupRequest запрос на редактирование reply_markup сообщения
+type EditMessageReplyMarkupRequest struct {
+	ChatID    int64                  `json:"chat_id"`
+	MessageID int64                  `json:"message_id"`
+	ReplyMarkup map[string]interface{} `json:"reply_markup,omitempty"`
+}
+
+// EditMessageReplyMarkup редактирует reply_markup сообщения (убирает кнопки, если передать пустой reply_markup)
+func (c *Client) EditMessageReplyMarkup(ctx context.Context, chatID int64, messageID int64, replyMarkup map[string]interface{}) error {
+	reqBody := EditMessageReplyMarkupRequest{
+		ChatID:     chatID,
+		MessageID:  messageID,
+		ReplyMarkup: replyMarkup,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		c.log.Error("failed to marshal edit message reply markup request",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+		)
+		return fmt.Errorf("telegram marshal failed [chat_id=%d, message_id=%d]: %w", chatID, messageID, err)
+	}
+
+	url := c.baseURL + "/editMessageReplyMarkup"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		c.log.Error("failed to create edit message reply markup request",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+		)
+		return fmt.Errorf("telegram create request failed [chat_id=%d, message_id=%d]: %w", chatID, messageID, err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		c.log.Debug("telegram edit message reply markup request failed",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+		)
+		return fmt.Errorf("telegram request failed [chat_id=%d, message_id=%d]: %w", chatID, messageID, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.log.Error("failed to read edit message reply markup response body",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+			"status_code", resp.StatusCode,
+		)
+		return fmt.Errorf("telegram read body failed [chat_id=%d, message_id=%d, status=%d]: %w",
+			chatID, messageID, resp.StatusCode, err)
+	}
+
+	var apiResp APIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		c.log.Error("failed to unmarshal edit message reply markup response",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+			"status_code", resp.StatusCode,
+			"body_preview", truncateString(string(body), 200),
+		)
+		return fmt.Errorf("telegram unmarshal failed [chat_id=%d, message_id=%d, status=%d]: %w",
+			chatID, messageID, resp.StatusCode, err)
+	}
+
+	if !apiResp.OK {
+		c.log.Debug("telegram API error on edit message reply markup",
+			"error_code", apiResp.ErrorCode,
+			"description", apiResp.Description,
+			"chat_id", chatID,
+			"message_id", messageID,
+			"status_code", resp.StatusCode,
+		)
+		return fmt.Errorf("telegram API error [code=%d, chat_id=%d, message_id=%d]: %s",
+			apiResp.ErrorCode, chatID, messageID, apiResp.Description)
+	}
+
+	c.log.Debug("message reply markup edited successfully",
+		"chat_id", chatID,
+		"message_id", messageID,
+	)
+	return nil
+}

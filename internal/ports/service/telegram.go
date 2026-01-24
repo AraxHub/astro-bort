@@ -13,4 +13,5 @@ type ITelegramService interface {
 	SendMessageWithMarkdown(ctx context.Context, botID domain.BotId, chatID int64, text string) error
 	SendMessageWithKeyboard(ctx context.Context, botID domain.BotId, chatID int64, text string, keyboard map[string]interface{}) error
 	AnswerCallbackQuery(ctx context.Context, botID domain.BotId, callbackID string, text string, showAlert bool) error
+	EditMessageReplyMarkup(ctx context.Context, botID domain.BotId, chatID int64, messageID int64, replyMarkup map[string]interface{}) error
 }

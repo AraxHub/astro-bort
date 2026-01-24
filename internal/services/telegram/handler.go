@@ -74,7 +74,6 @@ func (s *Service) HandleCallbackQuery(ctx context.Context, botID domain.BotId, c
 	// Роутинг callback по data
 	callbackData := *callbackQuery.Data
 	if strings.HasPrefix(callbackData, "weekly_forecast:") {
-		// Обрабатываем callback для недельного прогноза
 		return s.handleWeeklyForecastCallback(ctx, botID, callbackQuery, user, callbackData)
 	}
 
@@ -134,8 +133,34 @@ func (s *Service) handleWeeklyForecastCallback(ctx context.Context, botID domain
 		return fmt.Errorf("unknown bot_type: %s", botType)
 	}
 
+	// Получаем message_id и chat_id из callback query
+	if callbackQuery.Message == nil {
+		s.Log.Warn("callback query has no message",
+			"callback_id", callbackQuery.ID,
+			"user_id", user.ID)
+		if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "Ошибка обработки запроса", false); err != nil {
+			s.Log.Warn("failed to answer callback query", "error", err)
+		}
+		return nil
+	}
+
+	messageID := callbackQuery.Message.MessageID
+	var chatID int64
+	if callbackQuery.Message.Chat != nil {
+		chatID = callbackQuery.Message.Chat.ID
+	} else {
+		s.Log.Warn("callback query message has no chat",
+			"callback_id", callbackQuery.ID,
+			"user_id", user.ID,
+			"message_id", messageID)
+		if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "Ошибка обработки запроса", false); err != nil {
+			s.Log.Warn("failed to answer callback query", "error", err)
+		}
+		return nil
+	}
+
 	// Вызываем метод обработки callback в usecase
-	if err := botService.HandleWeeklyForecastCallback(ctx, botID, user); err != nil {
+	if err := botService.HandleWeeklyForecastCallback(ctx, botID, user, messageID, chatID); err != nil {
 		return domain.WrapBusinessError(fmt.Errorf("failed to handle weekly forecast callback: %w", err))
 	}
 

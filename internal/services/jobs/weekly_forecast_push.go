@@ -42,20 +42,20 @@ func (j *WeeklyForecastPush) Name() string {
 // TODO: РАСКОММЕНТИТЬ СТАРЫЙ КОД ДЛЯ ПРОДАКШЕНА (каждый понедельник в 10:00 по Мск)
 // func (j *WeeklyForecastPush) NextRun(now time.Time) time.Time {
 // 	nowMoscow := now.In(j.location)
-// 	
+//
 // 	// Вычисляем количество дней до следующего понедельника
 // 	// time.Monday = 1, time.Sunday = 0
 // 	weekday := nowMoscow.Weekday()
 // 	daysUntilMonday := (int(time.Monday) - int(weekday) + 7) % 7
-// 	
+//
 // 	// Если сегодня понедельник и время >= 10:00, следующий запуск через неделю
 // 	if daysUntilMonday == 0 && nowMoscow.Hour() >= 10 {
 // 		daysUntilMonday = 7
 // 	}
-// 	
+//
 // 	next := nowMoscow.AddDate(0, 0, daysUntilMonday)
 // 	next = time.Date(next.Year(), next.Month(), next.Day(), 10, 0, 0, 0, j.location)
-// 	
+//
 // 	return next
 // }
 

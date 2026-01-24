@@ -104,10 +104,33 @@ func (s *Service) SendWeeklyForecastPush(ctx context.Context) error {
 
 // HandleWeeklyForecastCallback обрабатывает нажатие кнопки "Прочитать" для недельного прогноза
 // Создаёт Request и отправляет в RAG
-func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain.BotId, user *domain.User) error {
+func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain.BotId, user *domain.User, messageID int64, chatID int64) error {
 	s.Log.Info("handling weekly forecast callback",
 		"user_id", user.ID,
-		"bot_id", botID)
+		"bot_id", botID,
+		"message_id", messageID,
+		"chat_id", chatID)
+
+	// Убираем кнопку из сообщения (передаём пустой reply_markup)
+	if err := s.TelegramService.EditMessageReplyMarkup(ctx, botID, chatID, messageID, nil); err != nil {
+		s.Log.Warn("failed to remove button from message, continuing anyway",
+			"error", err,
+			"user_id", user.ID,
+			"message_id", messageID,
+		)
+		// Продолжаем работу даже если не удалось убрать кнопку
+	}
+
+	// Отправляем случайное сообщение "секундочку..."
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	generatingMessage := texts.WeeklyForecastGeneratingMessages[rng.Intn(len(texts.WeeklyForecastGeneratingMessages))]
+	if err := s.sendMessage(ctx, botID, chatID, generatingMessage); err != nil {
+		s.Log.Warn("failed to send generating message, continuing anyway",
+			"error", err,
+			"user_id", user.ID,
+		)
+		// Продолжаем работу даже если не удалось отправить сообщение
+	}
 
 	// Промпт для RAG (из texts для возможности редактирования тех-меном)
 	ragPrompt := texts.WeeklyForecastRAGPrompt
