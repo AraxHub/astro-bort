@@ -7,7 +7,6 @@ import (
 )
 
 // RequestType тип запроса в системе
-// Используется для различения обычных запросов пользователей и автоматических пушей
 type RequestType string
 
 const (
@@ -59,6 +58,18 @@ func (rt RequestType) IsHardcodedPush() bool {
 func (rt RequestType) IsRAGPush() bool {
 	return rt == RequestTypePushWeeklyForecast ||
 		rt == RequestTypePushSituational
+}
+
+// KafkaAction возвращает значение для хэдера 'action' в Kafka сообщении
+func (rt RequestType) KafkaAction() string {
+	switch rt {
+	case RequestTypePushWeeklyForecast:
+		return "prediction"
+	case RequestTypeUser:
+		return "chat"
+	default:
+		return "chat"
+	}
 }
 
 type Request struct {

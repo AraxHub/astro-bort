@@ -60,7 +60,7 @@ func NewProducer(cfg *Config, log *slog.Logger) (*Producer, error) {
 
 // SendRAGRequest отправляет запрос в RAG и возвращает partition и offset
 // В value передаётся request_text и натальный отчёт (raw JSON без экранирования), остальные поля - в headers
-func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, requestText string, natalReport domain.NatalReport) (int32, int64, error) {
+func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, requestText string, natalReport domain.NatalReport, requestType domain.RequestType) (int32, int64, error) {
 	var natalReportRaw json.RawMessage
 	if len(natalReport) > 0 {
 		if !json.Valid(natalReport) {
@@ -78,24 +78,33 @@ func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botI
 		return 0, 0, fmt.Errorf("failed to marshal value: %w", err)
 	}
 
-	msg := &sarama.ProducerMessage{
-		Topic: p.cfg.Topic,
-		Key:   sarama.StringEncoder(requestID.String()),
-		Value: sarama.ByteEncoder(valueBytes),
-		Headers: []sarama.RecordHeader{
-			{
-				Key:   []byte("request_id"),
-				Value: []byte(requestID.String()),
-			},
-			{
-				Key:   []byte("bot_id"),
-				Value: []byte(string(botID)),
-			},
-			{
-				Key:   []byte("chat_id"),
-				Value: []byte(fmt.Sprintf("%d", chatID)),
-			},
+	headers := []sarama.RecordHeader{
+		{
+			Key:   []byte("request_id"),
+			Value: []byte(requestID.String()),
 		},
+		{
+			Key:   []byte("bot_id"),
+			Value: []byte(string(botID)),
+		},
+		{
+			Key:   []byte("chat_id"),
+			Value: []byte(fmt.Sprintf("%d", chatID)),
+		},
+	}
+
+	if action := requestType.KafkaAction(); action != "" {
+		headers = append(headers, sarama.RecordHeader{
+			Key:   []byte("action"),
+			Value: []byte(action),
+		})
+	}
+
+	msg := &sarama.ProducerMessage{
+		Topic:   p.cfg.Topic,
+		Key:     sarama.StringEncoder(requestID.String()),
+		Value:   sarama.ByteEncoder(valueBytes),
+		Headers: headers,
 	}
 
 	partition, offset, err := p.producer.SendMessage(msg)

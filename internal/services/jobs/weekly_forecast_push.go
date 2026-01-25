@@ -17,7 +17,6 @@ type WeeklyForecastPush struct {
 	location     *time.Location
 }
 
-// NewWeeklyForecastPush создаёт новую джобу для отправки пуша "прогноз на неделю"
 func NewWeeklyForecastPush(
 	astroService *astroUsecase.Service,
 	log *slog.Logger,
@@ -42,12 +41,9 @@ func (j *WeeklyForecastPush) Name() string {
 func (j *WeeklyForecastPush) NextRun(now time.Time) time.Time {
 	nowMoscow := now.In(j.location)
 
-	// Вычисляем количество дней до следующего понедельника
-	// time.Monday = 1, time.Sunday = 0
 	weekday := nowMoscow.Weekday()
 	daysUntilMonday := (int(time.Monday) - int(weekday) + 7) % 7
 
-	// Если сегодня понедельник и время >= 10:00, следующий запуск через неделю
 	if daysUntilMonday == 0 && nowMoscow.Hour() >= 10 {
 		daysUntilMonday = 7
 	}
@@ -58,7 +54,6 @@ func (j *WeeklyForecastPush) NextRun(now time.Time) time.Time {
 	return next
 }
 
-// Run отправляет пуш "прогноз на неделю" всем пользователям
 func (j *WeeklyForecastPush) Run(ctx context.Context) error {
 	return j.astroService.SendWeeklyForecastPush(ctx)
 }

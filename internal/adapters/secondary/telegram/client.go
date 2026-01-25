@@ -372,16 +372,16 @@ func (c *Client) SetWebhook(ctx context.Context, url string, secretToken string)
 
 // EditMessageReplyMarkupRequest запрос на редактирование reply_markup сообщения
 type EditMessageReplyMarkupRequest struct {
-	ChatID    int64                  `json:"chat_id"`
-	MessageID int64                  `json:"message_id"`
+	ChatID      int64                  `json:"chat_id"`
+	MessageID   int64                  `json:"message_id"`
 	ReplyMarkup map[string]interface{} `json:"reply_markup,omitempty"`
 }
 
 // EditMessageReplyMarkup редактирует reply_markup сообщения (убирает кнопки, если передать пустой reply_markup)
 func (c *Client) EditMessageReplyMarkup(ctx context.Context, chatID int64, messageID int64, replyMarkup map[string]interface{}) error {
 	reqBody := EditMessageReplyMarkupRequest{
-		ChatID:     chatID,
-		MessageID:  messageID,
+		ChatID:      chatID,
+		MessageID:   messageID,
 		ReplyMarkup: replyMarkup,
 	}
 

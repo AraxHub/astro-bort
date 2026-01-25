@@ -360,7 +360,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 	// Инкрементируем счётчик бесплатных сообщений для бесплатных пользователей
 	if !isPaidUser {
 		if err = s.UserRepo.UpdateFreeMsgCount(ctx, user.ID); err != nil {
-			s.Log.Warn("failed to increment free_msg_count",
+			s.Log.Error("failed to increment free_msg_count",
 				"error", err,
 				"user_id", user.ID,
 				"request_id", requestID,
@@ -387,7 +387,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 	}
 
 	if s.KafkaProducer != nil {
-		partition, offset, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport)
+		partition, offset, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport, request.RequestType)
 		if err != nil {
 			statusStage = domain.StageKafkaSend
 			statusErrorCode = "KAFKA_SEND_ERROR"

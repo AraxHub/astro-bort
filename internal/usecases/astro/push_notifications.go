@@ -132,10 +132,8 @@ func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain
 		// Продолжаем работу даже если не удалось отправить сообщение
 	}
 
-	// Промпт для RAG (из texts для возможности редактирования тех-меном)
 	ragPrompt := texts.WeeklyForecastRAGPrompt
 
-	// Проверяем наличие натальной карты
 	if user.NatalChartFetchedAt == nil {
 		if err := s.fetchAndSaveNatalChart(ctx, user); err != nil {
 			s.Log.Error("failed to fetch natal chart for weekly forecast",
@@ -149,7 +147,6 @@ func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain
 		}
 	}
 
-	// Создаём Request с типом RequestTypePushWeeklyForecast
 	request := &domain.Request{
 		ID:          uuid.New(),
 		UserID:      user.ID,
@@ -171,7 +168,6 @@ func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Получаем натальную карту для отправки в RAG
 	natalReport, err := s.UserRepo.GetNatalChart(ctx, user.ID)
 	if err != nil {
 		s.Log.Error("failed to get natal chart for RAG",
@@ -185,9 +181,8 @@ func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain
 		return fmt.Errorf("failed to get natal chart: %w", err)
 	}
 
-	// Отправляем в RAG через Kafka
 	if s.KafkaProducer != nil {
-		_, _, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport)
+		_, _, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport, request.RequestType)
 		if err != nil {
 			s.Log.Error("failed to send weekly forecast request to kafka",
 				"error", err,
@@ -248,10 +243,8 @@ func (s *Service) SendPremiumLimitPush(ctx context.Context) error {
 	return fmt.Errorf("not implemented yet")
 }
 
-// shouldSendToPaidUsers проверяет, нужно ли отправлять пуш платным пользователям на этой неделе
-// Чередование: одна неделя отправляем, следующая - нет
+// shouldSendToPaidUsers для платников одна неделя отправляем, следующая - нет
 func (s *Service) shouldSendToPaidUsers() bool {
 	_, week := time.Now().ISOWeek()
-	// Если неделя чётная - отправляем, если нечётная - нет (или наоборот, зависит от стартовой недели)
 	return week%2 == 0
 }

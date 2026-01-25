@@ -239,7 +239,7 @@ func (a *App) initUseCases(
 	externalServices *externalServices,
 	kafkaProducers map[string]*kafkaAdapter.Producer,
 ) *astroUsecase.Service {
-	var ragProducer *kafkaAdapter.Producer
+	var ragProducer kafka.IKafkaProducer
 	if prod, ok := kafkaProducers["requests"]; ok {
 		ragProducer = prod
 	}
