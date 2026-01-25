@@ -82,3 +82,8 @@ func FormatMyInfo(birthDateTime *time.Time, birthPlace *string, natalChartExists
 
 	return message.String()
 }
+
+// FormatPremiumLimitFreeWithLimit форматирует сообщение для бесплатников с остатком лимита
+func FormatPremiumLimitFreeWithLimit(remaining int) string {
+	return fmt.Sprintf(PremiumLimitFreeWithLimit, remaining)
+}

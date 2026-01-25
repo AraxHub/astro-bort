@@ -38,20 +38,25 @@ func (j *PremiumLimitPush) Name() string {
 	return premiumLimitPushName
 }
 
-// NextRun каждая пятница в 13:00 по Мск
+//// NextRun каждая пятница в 13:00 по Мск
+//todo раскоментить после теста
+//func (j *PremiumLimitPush) NextRun(now time.Time) time.Time {
+//	nowMoscow := now.In(j.location)
+//
+//	weekday := nowMoscow.Weekday()
+//	daysUntilFriday := (int(time.Friday) - int(weekday) + 7) % 7
+//	if daysUntilFriday == 0 && nowMoscow.Hour() >= 13 {
+//		daysUntilFriday = 7
+//	}
+//
+//	next := nowMoscow.AddDate(0, 0, daysUntilFriday)
+//	next = time.Date(next.Year(), next.Month(), next.Day(), 13, 0, 0, 0, j.location)
+//
+//	return next
+//}
+
 func (j *PremiumLimitPush) NextRun(now time.Time) time.Time {
-	nowMoscow := now.In(j.location)
-
-	weekday := nowMoscow.Weekday()
-	daysUntilFriday := (int(time.Friday) - int(weekday) + 7) % 7
-	if daysUntilFriday == 0 && nowMoscow.Hour() >= 13 {
-		daysUntilFriday = 7
-	}
-
-	next := nowMoscow.AddDate(0, 0, daysUntilFriday)
-	next = time.Date(next.Year(), next.Month(), next.Day(), 13, 0, 0, 0, j.location)
-
-	return next
+	return now.Add(time.Second * 10)
 }
 
 func (j *PremiumLimitPush) Run(ctx context.Context) error {

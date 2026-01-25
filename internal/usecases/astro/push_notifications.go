@@ -99,6 +99,17 @@ func (s *Service) SendWeeklyForecastPush(ctx context.Context) error {
 	}
 
 	s.Log.Info("weekly forecast push job completed", "sent", len(users))
+
+	// Отправляем статистику в алерт
+	if s.AlerterService != nil {
+		alertMsg := fmt.Sprintf("📊 Weekly Forecast Push завершён\n\n"+
+			"Отправлено сообщений: %d",
+			len(users))
+		if err := s.AlerterService.SendAlert(ctx, alertMsg); err != nil {
+			s.Log.Warn("failed to send weekly forecast push alert", "error", err)
+		}
+	}
+
 	return nil
 }
 
@@ -232,15 +243,225 @@ func (s *Service) SendSituationalWarningPush(ctx context.Context) error {
 func (s *Service) SendPremiumLimitPush(ctx context.Context) error {
 	s.Log.Info("starting premium limit push job")
 
-	// TODO: реализация будет добавлена позже
-	// 1. Получить всех активных пользователей
-	// 2. Разделить на бесплатников и платников
-	// 3. Для бесплатников: отправлять текст о лимите (зависит от FreeMsgCount)
-	// 4. Для платников: отправлять текст о глубоком разборе
-	// 5. Создавать Request с RequestTypePushPremiumLimit для истории
-	// 6. Отправлять сообщения напрямую (без RAG)
+	// Получаем пользователей, у которых last_seen_at > 1 час или NULL
+	users, err := s.UserRepo.GetUsersWithLastSeenOlderThan(ctx, 1)
+	if err != nil {
+		return fmt.Errorf("failed to get users: %w", err)
+	}
 
-	return fmt.Errorf("not implemented yet")
+	if len(users) == 0 {
+		s.Log.Info("no users found for premium limit push")
+		return nil
+	}
+
+	// Фильтруем только пользователей с натальной картой
+	var usersWithChart []*domain.User
+	for _, user := range users {
+		if user.NatalChartFetchedAt != nil {
+			usersWithChart = append(usersWithChart, user)
+		}
+	}
+
+	if len(usersWithChart) == 0 {
+		s.Log.Info("no users with natal chart found for premium limit push")
+		return nil
+	}
+
+	s.Log.Info("found users for premium limit push", "count", len(usersWithChart))
+
+	// Разделяем на платников и бесплатников
+	var paidUsers []*domain.User
+	var freeUsers []*domain.User
+
+	for _, user := range usersWithChart {
+		if user.IsPaid {
+			paidUsers = append(paidUsers, user)
+		} else {
+			freeUsers = append(freeUsers, user)
+		}
+	}
+
+	s.Log.Info("users split",
+		"paid_count", len(paidUsers),
+		"free_count", len(freeUsers))
+
+	// Создаём генератор случайных чисел
+	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	// Обрабатываем платников (неделя через неделю)
+	if len(paidUsers) > 0 && s.shouldSendToPaidUsers() {
+		s.Log.Info("sending premium limit push to paid users", "count", len(paidUsers))
+		for i, user := range paidUsers {
+			if i > 0 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+
+			// Получаем botID из последнего запроса или платежа
+			botID, err := s.RequestRepo.GetBotIDForUser(ctx, user.ID)
+			if err != nil {
+				if s.PaymentRepo != nil {
+					paymentBotID, paymentErr := s.PaymentRepo.GetBotIDForUser(ctx, user.ID)
+					if paymentErr == nil {
+						botID = domain.BotId(paymentBotID)
+					} else {
+						s.Log.Warn("failed to get bot_id for paid user, skipping",
+							"error", err,
+							"payment_error", paymentErr,
+							"user_id", user.ID)
+						continue
+					}
+				} else {
+					s.Log.Warn("failed to get bot_id for paid user, skipping (no payment repo)",
+						"error", err,
+						"user_id", user.ID)
+					continue
+				}
+			}
+
+			// Выбираем случайное сообщение для платников
+			message := texts.PremiumLimitPaidMessages[rng.Intn(len(texts.PremiumLimitPaidMessages))]
+
+			// Создаём Request для истории
+			request := &domain.Request{
+				ID:          uuid.New(),
+				UserID:      user.ID,
+				BotID:       botID,
+				TGUpdateID:  nil,
+				RequestType: domain.RequestTypePushPremiumLimit,
+				RequestText: message,
+				CreatedAt:   time.Now(),
+			}
+
+			if err := s.RequestRepo.Create(ctx, request); err != nil {
+				s.Log.Warn("failed to create premium limit push request, continuing anyway",
+					"error", err,
+					"user_id", user.ID)
+			}
+
+			// Отправляем сообщение
+			if err := s.sendMessage(ctx, botID, user.TelegramChatID, message); err != nil {
+				s.Log.Warn("failed to send premium limit push to paid user, continuing anyway",
+					"error", err,
+					"user_id", user.ID,
+					"bot_id", botID)
+				continue
+			}
+
+			s.Log.Debug("premium limit push sent to paid user",
+				"user_id", user.ID,
+				"bot_id", botID)
+		}
+	} else if len(paidUsers) > 0 {
+		s.Log.Info("skipping paid users this week (alternation)")
+	}
+
+	// Обрабатываем бесплатников (каждую неделю)
+	if len(freeUsers) > 0 {
+		s.Log.Info("sending premium limit push to free users", "count", len(freeUsers))
+		for i, user := range freeUsers {
+			if i > 0 {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(100 * time.Millisecond):
+				}
+			}
+
+			// Получаем botID из последнего запроса или платежа
+			botID, err := s.RequestRepo.GetBotIDForUser(ctx, user.ID)
+			if err != nil {
+				if s.PaymentRepo != nil {
+					paymentBotID, paymentErr := s.PaymentRepo.GetBotIDForUser(ctx, user.ID)
+					if paymentErr == nil {
+						botID = domain.BotId(paymentBotID)
+					} else {
+						s.Log.Warn("failed to get bot_id for free user, skipping",
+							"error", err,
+							"payment_error", paymentErr,
+							"user_id", user.ID)
+						continue
+					}
+				} else {
+					s.Log.Warn("failed to get bot_id for free user, skipping (no payment repo)",
+						"error", err,
+						"user_id", user.ID)
+					continue
+				}
+			}
+
+			// Определяем текст в зависимости от лимита
+			var message string
+			remaining := s.FreeMessagesLimit - user.FreeMsgCount
+			if remaining > 0 {
+				message = texts.FormatPremiumLimitFreeWithLimit(remaining)
+			} else {
+				message = texts.PremiumLimitFreeNoLimit
+			}
+
+			// Создаём Request для истории
+			request := &domain.Request{
+				ID:          uuid.New(),
+				UserID:      user.ID,
+				BotID:       botID,
+				TGUpdateID:  nil,
+				RequestType: domain.RequestTypePushPremiumLimit,
+				RequestText: message,
+				CreatedAt:   time.Now(),
+			}
+
+			if err := s.RequestRepo.Create(ctx, request); err != nil {
+				s.Log.Warn("failed to create premium limit push request, continuing anyway",
+					"error", err,
+					"user_id", user.ID)
+			}
+
+			// Отправляем сообщение
+			if err := s.sendMessage(ctx, botID, user.TelegramChatID, message); err != nil {
+				s.Log.Warn("failed to send premium limit push to free user, continuing anyway",
+					"error", err,
+					"user_id", user.ID,
+					"bot_id", botID)
+				continue
+			}
+
+			s.Log.Debug("premium limit push sent to free user",
+				"user_id", user.ID,
+				"bot_id", botID,
+				"remaining", remaining)
+		}
+	}
+
+	var paidSent int
+	if s.shouldSendToPaidUsers() {
+		paidSent = len(paidUsers)
+	} else {
+		paidSent = 0
+	}
+	freeSent := len(freeUsers)
+	totalSent := paidSent + freeSent
+
+	s.Log.Info("premium limit push job completed",
+		"paid_sent", paidSent,
+		"free_sent", freeSent,
+		"total_sent", totalSent)
+
+	// Отправляем статистику в алерт
+	if s.AlerterService != nil {
+		alertMsg := fmt.Sprintf("📊 Premium Limit Push завершён\n\n"+
+			"Платники: %d\n"+
+			"Бесплатники: %d\n"+
+			"Всего отправлено: %d",
+			paidSent, freeSent, totalSent)
+		if err := s.AlerterService.SendAlert(ctx, alertMsg); err != nil {
+			s.Log.Warn("failed to send premium limit push alert", "error", err)
+		}
+	}
+
+	return nil
 }
 
 // shouldSendToPaidUsers для платников одна неделя отправляем, следующая - нет
