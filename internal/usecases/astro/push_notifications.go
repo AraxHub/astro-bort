@@ -351,6 +351,13 @@ func (s *Service) SendPremiumLimitPush(ctx context.Context) error {
 				continue
 			}
 
+			// Обновляем last_seen_at после успешной отправки
+			if err := s.UserRepo.UpdateLastSeen(ctx, user.ID); err != nil {
+				s.Log.Warn("failed to update last_seen_at for paid user, continuing anyway",
+					"error", err,
+					"user_id", user.ID)
+			}
+
 			s.Log.Debug("premium limit push sent to paid user",
 				"user_id", user.ID,
 				"bot_id", botID)
@@ -426,6 +433,13 @@ func (s *Service) SendPremiumLimitPush(ctx context.Context) error {
 					"user_id", user.ID,
 					"bot_id", botID)
 				continue
+			}
+
+			// Обновляем last_seen_at после успешной отправки
+			if err := s.UserRepo.UpdateLastSeen(ctx, user.ID); err != nil {
+				s.Log.Warn("failed to update last_seen_at for free user, continuing anyway",
+					"error", err,
+					"user_id", user.ID)
 			}
 
 			s.Log.Debug("premium limit push sent to free user",
