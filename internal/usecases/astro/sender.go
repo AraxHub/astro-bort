@@ -48,3 +48,17 @@ func (s *Service) sendMessageWithKeyboard(ctx context.Context, botID domain.BotI
 
 	return nil
 }
+
+// sendMessageWithKeyboardAndMarkdown отправляет сообщение с inline клавиатурой и Markdown форматированием через Telegram Service
+func (s *Service) sendMessageWithKeyboardAndMarkdown(ctx context.Context, botID domain.BotId, chatID int64, text string, keyboard map[string]interface{}) error {
+	if err := s.TelegramService.SendMessageWithKeyboardAndMarkdown(ctx, botID, chatID, text, keyboard); err != nil {
+		s.Log.Error("failed to send message with keyboard and markdown",
+			"error", err,
+			"bot_id", botID,
+			"chat_id", chatID,
+		)
+		return fmt.Errorf("failed to send message with keyboard and markdown: %w", err)
+	}
+
+	return nil
+}

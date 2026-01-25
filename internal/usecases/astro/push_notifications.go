@@ -238,18 +238,6 @@ func (s *Service) HandlePremiumLimitPaymentCallback(ctx context.Context, botID d
 		return nil
 	}
 
-	remaining := s.FreeMessagesLimit - user.FreeMsgCount
-	if remaining > 0 {
-		s.Log.Warn("free user with remaining limit clicked pay button",
-			"user_id", user.ID,
-			"bot_id", botID,
-			"remaining", remaining)
-		if err := s.sendMessage(ctx, botID, user.TelegramChatID, fmt.Sprintf("У вас ещё осталось %d бесплатных вопросов.", remaining)); err != nil {
-			s.Log.Warn("failed to send message to free user", "error", err)
-		}
-		return nil
-	}
-
 	// Создаём платеж (invoice отправится автоматически)
 	if s.PaymentService != nil {
 		productID := "monthly_feed"
@@ -502,20 +490,21 @@ func (s *Service) SendPremiumLimitPush(ctx context.Context) error {
 			}
 
 			// Отправляем сообщение
-			// Если лимит израсходован, добавляем кнопку "Заплатить"
+			// Если лимит израсходован, добавляем кнопку "Купить корм" с количеством звёзд
 			if remaining <= 0 {
+				buttonText := fmt.Sprintf("Купить корм %d ⭐", s.StarsPrice)
 				keyboard := map[string]interface{}{
 					"inline_keyboard": [][]map[string]interface{}{
 						{
 							{
-								"text":          "Заплатить",
+								"text":          buttonText,
 								"callback_data": fmt.Sprintf("premium_limit_pay:%s", user.ID.String()),
 							},
 						},
 					},
 				}
 
-				if err := s.sendMessageWithKeyboard(ctx, botID, user.TelegramChatID, message, keyboard); err != nil {
+				if err := s.sendMessageWithKeyboardAndMarkdown(ctx, botID, user.TelegramChatID, message, keyboard); err != nil {
 					s.Log.Warn("failed to send premium limit push to free user with button, continuing anyway",
 						"error", err,
 						"user_id", user.ID,

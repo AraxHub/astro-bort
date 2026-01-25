@@ -113,6 +113,19 @@ func (c *Client) SendMessageWithKeyboard(ctx context.Context, chatID int64, text
 	return err
 }
 
+// SendMessageWithKeyboardAndMarkdown отправляет сообщение с клавиатурой и Markdown форматированием
+func (c *Client) SendMessageWithKeyboardAndMarkdown(ctx context.Context, chatID int64, text string, keyboard map[string]interface{}) error {
+	req := SendMessageRequest{
+		ChatID:      chatID,
+		Text:        text,
+		ParseMode:   "Markdown",
+		ReplyMarkup: keyboard,
+	}
+
+	_, err := c.sendMessage(ctx, req)
+	return err
+}
+
 // SendMessageWithRequest отправляет сообщение с кастомным запросом (для поддержки message_thread_id и других параметров)
 func (c *Client) SendMessageWithRequest(ctx context.Context, req SendMessageRequest) (int64, error) {
 	return c.sendMessage(ctx, req)
