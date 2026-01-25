@@ -220,6 +220,81 @@ func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain
 	return nil
 }
 
+// HandlePremiumLimitPaymentCallback обрабатывает нажатие на кнопку "Заплатить" в Premium Limit Push
+func (s *Service) HandlePremiumLimitPaymentCallback(ctx context.Context, botID domain.BotId, user *domain.User) error {
+	s.Log.Info("handling premium limit payment callback",
+		"user_id", user.ID,
+		"bot_id", botID)
+
+	// Проверяем, что пользователь действительно бесплатный и лимит израсходован
+	isPaidUser := user.IsPaid || user.ManualGranted
+	if isPaidUser {
+		s.Log.Warn("paid user clicked premium limit pay button",
+			"user_id", user.ID,
+			"bot_id", botID)
+		if err := s.sendMessage(ctx, botID, user.TelegramChatID, "У вас уже есть активная подписка."); err != nil {
+			s.Log.Warn("failed to send message to paid user", "error", err)
+		}
+		return nil
+	}
+
+	remaining := s.FreeMessagesLimit - user.FreeMsgCount
+	if remaining > 0 {
+		s.Log.Warn("free user with remaining limit clicked pay button",
+			"user_id", user.ID,
+			"bot_id", botID,
+			"remaining", remaining)
+		if err := s.sendMessage(ctx, botID, user.TelegramChatID, fmt.Sprintf("У вас ещё осталось %d бесплатных вопросов.", remaining)); err != nil {
+			s.Log.Warn("failed to send message to free user", "error", err)
+		}
+		return nil
+	}
+
+	// Создаём платеж (invoice отправится автоматически)
+	if s.PaymentService != nil {
+		productID := "monthly_feed"
+		productTitle := texts.BuyMonthlyFeedTitle
+		description := texts.BuyMonthlyFeedDescription
+		amount := s.StarsPrice
+
+		_, paymentErr := s.PaymentService.CreatePayment(
+			ctx,
+			botID,
+			user.ID,
+			user.TelegramChatID,
+			productID,
+			productTitle,
+			description,
+			amount,
+		)
+		if paymentErr != nil {
+			s.Log.Error("failed to create payment for premium limit push",
+				"error", paymentErr,
+				"user_id", user.ID,
+				"bot_id", botID,
+			)
+			if sendErr := s.sendMessage(ctx, botID, user.TelegramChatID, "Ошибка при создании платежа. Попробуйте позже."); sendErr != nil {
+				s.Log.Warn("failed to notify user about payment error", "error", sendErr)
+			}
+			return fmt.Errorf("failed to create payment: %w", paymentErr)
+		}
+
+		s.Log.Info("payment created for premium limit push",
+			"user_id", user.ID,
+			"bot_id", botID)
+	} else {
+		s.Log.Error("payment service not configured",
+			"user_id", user.ID,
+			"bot_id", botID)
+		if err := s.sendMessage(ctx, botID, user.TelegramChatID, "Платежи временно недоступны. Попробуйте позже."); err != nil {
+			s.Log.Warn("failed to notify user about payment unavailability", "error", err)
+		}
+		return fmt.Errorf("payment service not configured")
+	}
+
+	return nil
+}
+
 // SendSituationalWarningPush отправляет пуш "ситуативное предупреждение" всем пользователям
 // Отправляется в Ср 13:00 и Вс 9:00
 // Для платников чередуется неделя через неделю
@@ -427,12 +502,34 @@ func (s *Service) SendPremiumLimitPush(ctx context.Context) error {
 			}
 
 			// Отправляем сообщение
-			if err := s.sendMessage(ctx, botID, user.TelegramChatID, message); err != nil {
-				s.Log.Warn("failed to send premium limit push to free user, continuing anyway",
-					"error", err,
-					"user_id", user.ID,
-					"bot_id", botID)
-				continue
+			// Если лимит израсходован, добавляем кнопку "Заплатить"
+			if remaining <= 0 {
+				keyboard := map[string]interface{}{
+					"inline_keyboard": [][]map[string]interface{}{
+						{
+							{
+								"text":          "Заплатить",
+								"callback_data": fmt.Sprintf("premium_limit_pay:%s", user.ID.String()),
+							},
+						},
+					},
+				}
+
+				if err := s.sendMessageWithKeyboard(ctx, botID, user.TelegramChatID, message, keyboard); err != nil {
+					s.Log.Warn("failed to send premium limit push to free user with button, continuing anyway",
+						"error", err,
+						"user_id", user.ID,
+						"bot_id", botID)
+					continue
+				}
+			} else {
+				if err := s.sendMessage(ctx, botID, user.TelegramChatID, message); err != nil {
+					s.Log.Warn("failed to send premium limit push to free user, continuing anyway",
+						"error", err,
+						"user_id", user.ID,
+						"bot_id", botID)
+					continue
+				}
 			}
 
 			// Обновляем last_seen_at после успешной отправки

@@ -83,7 +83,30 @@ func FormatMyInfo(birthDateTime *time.Time, birthPlace *string, natalChartExists
 	return message.String()
 }
 
+// pluralizeQuestion правильно склоняет слово "вопрос" в зависимости от числа
+func pluralizeQuestion(count int) string {
+	// Получаем последнюю цифру и две последние цифры
+	lastDigit := count % 10
+	lastTwoDigits := count % 100
+
+	// Исключения для 11-14
+	if lastTwoDigits >= 11 && lastTwoDigits <= 14 {
+		return "вопросов"
+	}
+
+	// Склонение по последней цифре
+	switch lastDigit {
+	case 1:
+		return "вопрос"
+	case 2, 3, 4:
+		return "вопроса"
+	default:
+		return "вопросов"
+	}
+}
+
 // FormatPremiumLimitFreeWithLimit форматирует сообщение для бесплатников с остатком лимита
 func FormatPremiumLimitFreeWithLimit(remaining int) string {
-	return fmt.Sprintf(PremiumLimitFreeWithLimit, remaining)
+	questionWord := pluralizeQuestion(remaining)
+	return fmt.Sprintf(PremiumLimitFreeWithLimit, remaining, questionWord)
 }

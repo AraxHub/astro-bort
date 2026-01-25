@@ -14,4 +14,5 @@ type IBotService interface {
 	GetOrCreateUser(ctx context.Context, botID domain.BotId, tgUser *domain.TelegramUser, chat *domain.Chat) (*domain.User, error)
 	HandleRAGResponse(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, responseText string) error
 	HandleWeeklyForecastCallback(ctx context.Context, botID domain.BotId, user *domain.User, messageID int64, chatID int64) error
+	HandlePremiumLimitPaymentCallback(ctx context.Context, botID domain.BotId, user *domain.User) error
 }
