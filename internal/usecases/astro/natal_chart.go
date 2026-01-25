@@ -49,11 +49,11 @@ func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User)
 		return err
 	}
 
-	// Сохраняем в Redis только если ответ валидный
+	// Сохраняем в Redis только если ответ валидный без TTL
 	if s.Cache != nil {
 		cacheKey := fmt.Sprintf("astro:natal:%d", user.TelegramChatID)
-		ttl := 24 * time.Hour
-		if err := s.Cache.Set(ctx, cacheKey, string(natalReport), ttl); err != nil {
+		// TTL = 0 = без TTL
+		if err := s.Cache.Set(ctx, cacheKey, string(natalReport), 0); err != nil {
 			s.Log.Warn("failed to cache natal chart in Redis",
 				"error", err,
 				"user_id", user.ID,
@@ -61,11 +61,10 @@ func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User)
 				"cache_key", cacheKey,
 			)
 		} else {
-			s.Log.Debug("natal chart cached in Redis",
+			s.Log.Debug("natal chart cached in Redis (no TTL)",
 				"user_id", user.ID,
 				"chat_id", user.TelegramChatID,
 				"cache_key", cacheKey,
-				"ttl", ttl,
 			)
 		}
 	}
