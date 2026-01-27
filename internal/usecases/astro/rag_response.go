@@ -85,8 +85,8 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 	var totalParts int
 
 	if len([]rune(responseText)) <= maxMessageLength {
-		// Короткое сообщение - отправляем как есть
-		messageID, err := s.TelegramService.SendMessageWithID(ctx, botID, chatID, responseText)
+		// Короткое сообщение - отправляем как есть с HTML форматированием
+		messageID, err := s.TelegramService.SendMessageWithIDAndHTML(ctx, botID, chatID, responseText)
 		if err != nil {
 			statusStage = domain.StageSendTelegram
 			statusErrorCode = "TELEGRAM_SEND_ERROR"
@@ -126,7 +126,7 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 				}
 			}
 
-			messageID, err := s.TelegramService.SendMessageWithID(ctx, botID, chatID, part)
+			messageID, err := s.TelegramService.SendMessageWithIDAndHTML(ctx, botID, chatID, part)
 			if err != nil {
 				statusStage = domain.StageSendTelegram
 				statusErrorCode = "TELEGRAM_SEND_ERROR"

@@ -89,6 +89,17 @@ func (c *Client) SendMessageWithID(ctx context.Context, chatID int64, text strin
 	return c.sendMessage(ctx, req)
 }
 
+// SendMessageWithIDAndHTML отправляет текстовое сообщение с HTML форматированием и возвращает messageID
+func (c *Client) SendMessageWithIDAndHTML(ctx context.Context, chatID int64, text string) (int64, error) {
+	req := SendMessageRequest{
+		ChatID:    chatID,
+		Text:      text,
+		ParseMode: "HTML",
+	}
+
+	return c.sendMessage(ctx, req)
+}
+
 // SendMessageWithMarkdown отправляет текстовое сообщение с Markdown форматированием
 func (c *Client) SendMessageWithMarkdown(ctx context.Context, chatID int64, text string) error {
 	req := SendMessageRequest{

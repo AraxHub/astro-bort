@@ -28,6 +28,21 @@ func (s *Service) SendMessageWithID(ctx context.Context, botID domain.BotId, cha
 	return messageID, nil
 }
 
+// SendMessageWithIDAndHTML отправляет текстовое сообщение с HTML форматированием пользователю и возвращает messageID
+func (s *Service) SendMessageWithIDAndHTML(ctx context.Context, botID domain.BotId, chatID int64, text string) (int64, error) {
+	client, ok := s.TelegramClients[botID]
+	if !ok {
+		return 0, fmt.Errorf("telegram client not found for bot_id: %s", botID)
+	}
+
+	messageID, err := client.SendMessageWithIDAndHTML(ctx, chatID, text)
+	if err != nil {
+		return 0, fmt.Errorf("failed to send message with HTML: %w", err)
+	}
+
+	return messageID, nil
+}
+
 // SendMessageWithMarkdown отправляет текстовое сообщение с Markdown форматированием
 func (s *Service) SendMessageWithMarkdown(ctx context.Context, botID domain.BotId, chatID int64, text string) error {
 	client, ok := s.TelegramClients[botID]

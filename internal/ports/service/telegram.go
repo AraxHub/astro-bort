@@ -10,6 +10,7 @@ import (
 type ITelegramService interface {
 	SendMessage(ctx context.Context, botID domain.BotId, chatID int64, text string) error
 	SendMessageWithID(ctx context.Context, botID domain.BotId, chatID int64, text string) (int64, error) // возвращает messageID
+	SendMessageWithIDAndHTML(ctx context.Context, botID domain.BotId, chatID int64, text string) (int64, error)
 	SendMessageWithMarkdown(ctx context.Context, botID domain.BotId, chatID int64, text string) error
 	SendMessageWithKeyboard(ctx context.Context, botID domain.BotId, chatID int64, text string, keyboard map[string]interface{}) error
 	SendMessageWithKeyboardAndMarkdown(ctx context.Context, botID domain.BotId, chatID int64, text string, keyboard map[string]interface{}) error
