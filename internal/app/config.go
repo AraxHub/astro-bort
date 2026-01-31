@@ -9,6 +9,7 @@ import (
 	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
 	redisAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/redis"
+	s3Adapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/s3"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
 	"github.com/admin/tg-bots/astro-bot/internal/pkg/logger"
@@ -19,6 +20,7 @@ import (
 type Config struct {
 	Postgres *pg.Config                `envconfig:"POSTGRES"`
 	Redis    *redisAdapter.Config      `envconfig:"REDIS"`
+	S3       *s3Adapter.Config          `envconfig:"MINIO"`
 	Log      *logger.Config            `envconfig:"LOG"`
 	Server   *server.Config            `envconfig:"APISERVER"`
 	Telegram *telegram.Config          `envconfig:"TELEGRAM"`
@@ -27,12 +29,19 @@ type Config struct {
 	Kafka    kafkaAdapter.KafkaConfigs `envconfig:"KAFKA"`
 	Alerter  *alerterAdapter.Config    `envconfig:"ALERTER"`
 	Astro    *AstroConfig              `envconfig:"ASTRO"`
+	Admin    *AdminConfig              `envconfig:"ADMIN"`
 }
 
 // AstroConfig конфигурация бизнес-логики Astro бота
 type AstroConfig struct {
 	FreeMessagesLimit int   `envconfig:"FREE_MESSAGES_LIMIT" default:"15"`
 	StarsPrice        int64 `envconfig:"STARS_PRICE" default:"1"`
+}
+
+// AdminConfig конфигурация админских эндпоинтов
+type AdminConfig struct {
+	ImageSyncBotID  string `envconfig:"IMAGE_SYNC_BOT_ID"`   // Bot ID для синхронизации картинок
+	ImageSyncChatID int64  `envconfig:"IMAGE_SYNC_CHAT_ID"`  // Chat ID для отправки картинок при синхронизации
 }
 
 // BotsConfig конфигурация ботов

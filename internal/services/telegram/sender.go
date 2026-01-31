@@ -99,6 +99,21 @@ func (s *Service) AnswerCallbackQuery(ctx context.Context, botID domain.BotId, c
 	return nil
 }
 
+// SendPhoto отправляет фото в чат и возвращает file_id
+func (s *Service) SendPhoto(ctx context.Context, botID domain.BotId, chatID int64, messageThreadID *int64, photoData []byte, filename string) (string, error) {
+	client, ok := s.TelegramClients[botID]
+	if !ok {
+		return "", fmt.Errorf("telegram client not found for bot_id: %s", botID)
+	}
+
+	fileID, err := client.SendPhoto(ctx, chatID, messageThreadID, photoData, filename)
+	if err != nil {
+		return "", fmt.Errorf("failed to send photo: %w", err)
+	}
+
+	return fileID, nil
+}
+
 // EditMessageReplyMarkup редактирует reply_markup сообщения (убирает кнопки, если передать пустой reply_markup)
 func (s *Service) EditMessageReplyMarkup(ctx context.Context, botID domain.BotId, chatID int64, messageID int64, replyMarkup map[string]interface{}) error {
 	client, ok := s.TelegramClients[botID]
