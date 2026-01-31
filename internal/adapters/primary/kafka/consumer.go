@@ -127,13 +127,6 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 			key := string(message.Key)
 			value := message.Value
 
-			h.log.Debug("received message from kafka",
-				"topic", message.Topic,
-				"partition", message.Partition,
-				"offset", message.Offset,
-				"key", key,
-			)
-
 			if err := h.handler.HandleMessage(session.Context(), key, value); err != nil {
 				if domain.IsBusinessError(err) {
 					continue

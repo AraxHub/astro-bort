@@ -80,17 +80,17 @@ services:
       
       echo 'Creating topics...'
       
-      # RAG requests topic
+      # Requests topic
       kafka-topics --create --if-not-exists \\
         --bootstrap-server kafka:29092 \\
-        --topic rag_requests \\
+        --topic requests \\
         --partitions 3 \\
         --replication-factor 1
       
-      # RAG responses topic
+      # Responses topic
       kafka-topics --create --if-not-exists \\
         --bootstrap-server kafka:29092 \\
-        --topic rag_responses \\
+        --topic responses \\
         --partitions 3 \\
         --replication-factor 1
       
@@ -160,6 +160,56 @@ services:
       retries: 5
       start_period: 30s
 
+  minio:
+    image: minio/minio:latest
+    container_name: astro-bot-minio
+    ports:
+      - "9000:9000"  # MinIO API
+      - "9001:9001"  # MinIO Console
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    networks:
+      - astro-bot-network
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: astro-bot-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      "
+      echo 'Waiting for MinIO to be ready...'
+      sleep 5
+      
+      echo 'Configuring MinIO client...'
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-minioadmin} $${MINIO_ROOT_PASSWORD:-minioadmin}
+      
+      echo 'Creating bucket for images...'
+      mc mb local/images --ignore-existing || true
+      
+      echo 'Setting bucket policy...'
+      mc anonymous set download local/images || true
+      
+      echo 'MinIO initialized successfully!'
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    networks:
+      - astro-bot-network
+
   app:
     build:
       context: ../..
@@ -174,6 +224,10 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     ports:
       - "8080:8080"
     env_file:
@@ -185,6 +239,7 @@ services:
       - TG_BOTS_KAFKA_0_CONFIG_BROKERS=kafka:29092
       - TG_BOTS_KAFKA_1_CONFIG_BROKERS=kafka:29092
       - TG_BOTS_REDIS_HOST=redis
+      - TG_BOTS_MINIO_HOST=minio:9000
     networks:
       - astro-bot-network
     restart: unless-stopped
@@ -201,6 +256,7 @@ volumes:
   kafka_data:
   redis_data:
   redisinsight_data:
+  minio_data:
 
 networks:
   astro-bot-network:

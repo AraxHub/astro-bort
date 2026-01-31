@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	server "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http"
+	adminController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/admin"
 	alerterController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/alerter"
 	healthcheckController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/healthcheck"
 	telegramController "github.com/admin/tg-bots/astro-bot/internal/adapters/primary/http/controllers/telegram"
@@ -16,12 +17,16 @@ import (
 	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
 	redisAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/redis"
+	s3Adapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/s3"
 	tgAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/cache"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/repository"
 	"github.com/admin/tg-bots/astro-bot/internal/ports/service"
+	"github.com/admin/tg-bots/astro-bot/internal/ports/storage"
+	imageRepo "github.com/admin/tg-bots/astro-bot/internal/repository/image"
+	imageUsageRepo "github.com/admin/tg-bots/astro-bot/internal/repository/image_usage"
 	paymentRepo "github.com/admin/tg-bots/astro-bot/internal/repository/payment"
 	requestRepo "github.com/admin/tg-bots/astro-bot/internal/repository/request"
 	statusRepo "github.com/admin/tg-bots/astro-bot/internal/repository/status"
@@ -65,7 +70,19 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		return nil, fmt.Errorf("failed to init kafka: %w", err)
 	}
 
-	astroUseCase := a.initUseCases(repos, tgService, externalServices, kafkaProducers)
+	// S3 Client - опциональный
+	var s3Client storage.IS3Client
+	if a.Cfg.S3 != nil {
+		minioClient, err := a.Cfg.S3.NewClient()
+		if err != nil {
+			a.Log.Warn("failed to init S3 client, continuing without S3", "error", err)
+		} else {
+			s3Client = s3Adapter.NewClient(minioClient, a.Cfg.S3.Bucket, a.Log)
+			a.Log.Info("S3 client connected successfully")
+		}
+	}
+
+	astroUseCase := a.initUseCases(repos, tgService, externalServices, kafkaProducers, s3Client)
 	tgService.SetBotServices(map[domain.BotType]service.IBotService{
 		domain.BotTypeAstro: astroUseCase,
 	})
@@ -73,7 +90,7 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	// Инициализируем payment use case и интегрируем в telegram service и astro use case
 	a.initPayment(telegramClients, repos, tgService, externalServices.Alerter, astroUseCase)
 
-	httpServer := a.initHTTP(db, tgService, externalServices.Alerter)
+	httpServer := a.initHTTP(db, tgService, externalServices.Alerter, astroUseCase)
 	poller, err := a.initTelegramMode(ctx, tgService, telegramClients)
 	if err != nil {
 		return nil, fmt.Errorf("failed to init telegram mode: %w", err)
@@ -96,20 +113,24 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 
 // repositories содержит инициализированные репозитории
 type repositories struct {
-	User    repository.IUserRepo
-	Request repository.IRequestRepo
-	Status  repository.IStatusRepo
-	Payment repository.IPaymentRepo
+	User       repository.IUserRepo
+	Request    repository.IRequestRepo
+	Status     repository.IStatusRepo
+	Payment    repository.IPaymentRepo
+	Image      repository.IImageRepo
+	ImageUsage repository.IImageUsageRepo
 }
 
 // initRepositories инициализирует репозитории для работы с БД
 func (a *App) initRepositories(db *sqlx.DB) *repositories {
 	persistenceLayer := pg.NewDB(db)
 	return &repositories{
-		User:    userRepo.New(persistenceLayer, a.Log),
-		Request: requestRepo.New(persistenceLayer, a.Log),
-		Status:  statusRepo.New(persistenceLayer, a.Log),
-		Payment: paymentRepo.New(persistenceLayer, a.Log),
+		User:       userRepo.New(persistenceLayer, a.Log),
+		Request:    requestRepo.New(persistenceLayer, a.Log),
+		Status:     statusRepo.New(persistenceLayer, a.Log),
+		Payment:    paymentRepo.New(persistenceLayer, a.Log),
+		Image:      imageRepo.New(persistenceLayer, a.Log),
+		ImageUsage: imageUsageRepo.New(persistenceLayer, a.Log),
 	}
 }
 
@@ -238,6 +259,7 @@ func (a *App) initUseCases(
 	tgService *telegramService.Service,
 	externalServices *externalServices,
 	kafkaProducers map[string]*kafkaAdapter.Producer,
+	s3Client storage.IS3Client,
 ) *astroUsecase.Service {
 	var ragProducer kafka.IKafkaProducer
 	if prod, ok := kafkaProducers["requests"]; ok {
@@ -263,6 +285,9 @@ func (a *App) initUseCases(
 		ragProducer,              // может быть nil
 		externalServices.Alerter, // может быть nil
 		externalServices.Cache,   // может быть nil
+		s3Client,                 // может быть nil
+		repos.Image,              // может быть nil
+		repos.ImageUsage,         // может быть nil
 		freeMessagesLimit,
 		starsPrice,
 		a.Log,
@@ -274,6 +299,7 @@ func (a *App) initHTTP(
 	db *sqlx.DB,
 	tgService *telegramService.Service,
 	alerterSvc service.IAlerterService,
+	astroUseCase *astroUsecase.Service,
 ) *http.Server {
 	controllers := []server.Controller{
 		healthcheckController.New(db, a.Log),
@@ -282,6 +308,10 @@ func (a *App) initHTTP(
 
 	if alerterSvc != nil {
 		controllers = append(controllers, alerterController.New(alerterSvc, a.Log))
+	}
+
+	if astroUseCase != nil {
+		controllers = append(controllers, adminController.New(astroUseCase, a.Log))
 	}
 
 	return server.NewHTTPServer(a.Cfg.Server, a.Log, controllers...)
