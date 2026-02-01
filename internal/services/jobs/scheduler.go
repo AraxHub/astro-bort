@@ -43,8 +43,19 @@ func (s *Scheduler) Start(ctx context.Context) error {
 	s.log.Info("starting job scheduler", "jobs_count", len(s.jobs))
 
 	for _, job := range s.jobs {
+		job := job // фиксируем для замыкания
 		jobName := job.Name()
 		go func() {
+			// Обрабатываем панику
+			defer func() {
+				if r := recover(); r != nil {
+					s.log.Error("job panicked",
+						"job_name", jobName,
+						"panic", r,
+					)
+				}
+			}()
+
 			if err := s.runJob(ctx, job, jobName); err != nil {
 				s.log.Error("job exited with error",
 					"job_name", jobName,
@@ -65,11 +76,35 @@ func (s *Scheduler) runJob(ctx context.Context, job jobs.Job, jobName string) er
 
 		duration := nextRun.Sub(now)
 
+		// Если NextRun вернул время в прошлом, запускаем сразу (но логируем)
+		if duration < 0 {
+			s.log.Warn("next run time is in the past, executing immediately",
+				"job_name", jobName,
+				"next_run", nextRun,
+				"now", now,
+				"duration_seconds", duration.Seconds(),
+			)
+			duration = 0
+		}
+
+		// Логируем следующее время запуска
+		s.log.Debug("job scheduled",
+			"job_name", jobName,
+			"next_run", nextRun,
+			"duration_seconds", duration.Seconds(),
+		)
+
 		select {
 		case <-ctx.Done():
 			s.log.Info("job stopped by context", "job_name", jobName)
 			return nil
 		case <-time.After(duration):
+			s.log.Debug("job execution triggered",
+				"job_name", jobName,
+				"scheduled_time", nextRun,
+				"actual_time", time.Now(),
+			)
+
 			err, errors := s.executeJobWithRetry(ctx, job, jobName)
 			if err != nil {
 				s.log.Error("job failed after all retries",

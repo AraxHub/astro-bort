@@ -24,7 +24,7 @@ func (a *App) runServices(ctx context.Context, deps *Dependencies) error {
 	a.runKafkaConsumers(gCtx, g, deps)
 
 	// Job scheduler
-	a.runJobScheduler(gCtx, deps)
+	a.runJobScheduler(gCtx, g, deps)
 
 	// Graceful shutdown
 	g.Go(a.runGracefulShutdown(gCtx, deps))
@@ -77,15 +77,22 @@ func (a *App) runKafkaConsumers(ctx context.Context, g *errgroup.Group, deps *De
 }
 
 // runJobScheduler запускает планировщик джоб
-func (a *App) runJobScheduler(ctx context.Context, deps *Dependencies) {
+func (a *App) runJobScheduler(ctx context.Context, g *errgroup.Group, deps *Dependencies) {
 	if deps.JobScheduler == nil {
 		return
 	}
 
-	a.Log.Info("starting job scheduler")
-	if err := deps.JobScheduler.Start(ctx); err != nil {
-		a.Log.Error("failed to start job scheduler", "error", err)
-	}
+	g.Go(func() error {
+		a.Log.Info("starting job scheduler")
+		if err := deps.JobScheduler.Start(ctx); err != nil {
+			a.Log.Error("failed to start job scheduler", "error", err)
+			return fmt.Errorf("job scheduler error: %w", err)
+		}
+		// Планировщик работает в фоне, но мы отслеживаем его запуск
+		<-ctx.Done()
+		a.Log.Info("job scheduler stopped")
+		return nil
+	})
 }
 
 // runGracefulShutdown обрабатывает graceful shutdown всех сервисов
