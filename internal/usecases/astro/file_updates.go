@@ -91,6 +91,7 @@ func (s *Service) SyncImages(ctx context.Context, botID domain.BotId, syncChatID
 	}
 
 	// Обрабатываем новые файлы
+	firstPhoto := true
 	for filename, theme := range allFiles {
 		result.Processed++
 
@@ -99,6 +100,16 @@ func (s *Service) SyncImages(ctx context.Context, botID domain.BotId, syncChatID
 			s.Log.Debug("image already exists in DB", "filename", filename)
 			continue
 		}
+
+		// Задержка перед отправкой (кроме первой фотки) для соблюдения rate limit Telegram
+		if !firstPhoto {
+			select {
+			case <-ctx.Done():
+				return result, ctx.Err()
+			case <-time.After(1100 * time.Millisecond): // 1.1 секунды между отправками
+			}
+		}
+		firstPhoto = false
 
 		// Получаем файл из S3
 		themeObj := domain.ImageTheme(theme)
