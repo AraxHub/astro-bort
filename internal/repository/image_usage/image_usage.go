@@ -55,28 +55,14 @@ func (r *Repository) allColumns() string {
 		r.columns.UpdatedAt)
 }
 
-// GetOrCreate получает статистику использования для чата или создаёт новую запись
-func (r *Repository) GetOrCreate(ctx context.Context, chatID int64) (*domain.ImageUsage, error) {
-	usage, err := r.GetUsage(ctx, chatID)
-	if err == nil && usage != nil {
-		return usage, nil
-	}
-
-	// Если не найдено, создаём новую запись
-	now := time.Now()
-	usage = &domain.ImageUsage{
-		ChatID:     chatID,
-		UsedImages: make(map[string]int),
-		CreatedAt:  now,
-		UpdatedAt:  now,
-	}
-
+// Create создаёт новую запись статистики использования для чата
+func (r *Repository) Create(ctx context.Context, usage *domain.ImageUsage) error {
 	usedImagesJSON, err := json.Marshal(usage.UsedImages)
 	if err != nil {
 		r.Log.Error("failed to marshal used_images",
 			"error", err,
-			"chat_id", chatID)
-		return nil, fmt.Errorf("failed to marshal used_images: %w", err)
+			"chat_id", usage.ChatID)
+		return fmt.Errorf("failed to marshal used_images: %w", err)
 	}
 
 	query := fmt.Sprintf(`INSERT INTO %s (%s, %s, %s, %s) VALUES ($1, $2, $3, $4)`,
@@ -85,16 +71,16 @@ func (r *Repository) GetOrCreate(ctx context.Context, chatID int64) (*domain.Ima
 		r.columns.UsedImages,
 		r.columns.CreatedAt,
 		r.columns.UpdatedAt)
-	err = r.db.Exec(ctx, query, chatID, usedImagesJSON, now, now)
+	err = r.db.Exec(ctx, query, usage.ChatID, usedImagesJSON, usage.CreatedAt, usage.UpdatedAt)
 	if err != nil {
 		r.Log.Error("failed to create image_usage",
 			"error", err,
-			"chat_id", chatID)
-		return nil, fmt.Errorf("failed to create image_usage: %w", err)
+			"chat_id", usage.ChatID)
+		return fmt.Errorf("failed to create image_usage: %w", err)
 	}
 
-	r.Log.Debug("image_usage created successfully", "chat_id", chatID)
-	return usage, nil
+	r.Log.Debug("image_usage created successfully", "chat_id", usage.ChatID)
+	return nil
 }
 
 // imageUsageRow структура для сканирования из БД (JSONB требует специальной обработки)
@@ -106,6 +92,7 @@ type imageUsageRow struct {
 }
 
 // GetUsage получает статистику использования для чата
+// Возвращает ошибку, если запись не найдена (для различения с другими ошибками)
 func (r *Repository) GetUsage(ctx context.Context, chatID int64) (*domain.ImageUsage, error) {
 	var row imageUsageRow
 
@@ -116,7 +103,7 @@ func (r *Repository) GetUsage(ctx context.Context, chatID int64) (*domain.ImageU
 	err := r.db.Get(ctx, &row, query, chatID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, nil // Возвращаем nil, если не найдено
+			return nil, fmt.Errorf("image_usage not found: %w", err) // Возвращаем ошибку для различения
 		}
 		r.Log.Error("failed to get image_usage",
 			"error", err,
@@ -184,7 +171,7 @@ func (r *Repository) IncrementUsage(ctx context.Context, chatID int64, filename 
 	query := fmt.Sprintf(`UPDATE %s SET 
 		%s = jsonb_set(
 			COALESCE(%s, '{}'::jsonb),
-			$1,
+			ARRAY[$1]::text[],
 			to_jsonb(COALESCE((%s->>$1)::int, 0) + 1)
 		),
 		%s = $2
@@ -196,9 +183,8 @@ func (r *Repository) IncrementUsage(ctx context.Context, chatID int64, filename 
 		r.columns.UpdatedAt,
 		r.columns.ChatID)
 
-	// jsonb_set требует путь в формате массива: {"filename"}
-	keyPath := fmt.Sprintf(`{"%s"}`, filename)
-	rowsAffected, err := r.db.ExecWithResult(ctx, query, keyPath, time.Now(), chatID)
+	// jsonb_set требует путь в формате массива, используем ARRAY[$1]::text[] для явного указания типа
+	rowsAffected, err := r.db.ExecWithResult(ctx, query, filename, time.Now(), chatID)
 	if err != nil {
 		r.Log.Error("failed to increment image usage",
 			"error", err,

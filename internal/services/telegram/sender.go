@@ -114,6 +114,20 @@ func (s *Service) SendPhoto(ctx context.Context, botID domain.BotId, chatID int6
 	return fileID, nil
 }
 
+// SendPhotoByFileID отправляет фото в чат используя уже существующий file_id
+func (s *Service) SendPhotoByFileID(ctx context.Context, botID domain.BotId, chatID int64, fileID string) error {
+	client, ok := s.TelegramClients[botID]
+	if !ok {
+		return fmt.Errorf("telegram client not found for bot_id: %s", botID)
+	}
+
+	if err := client.SendPhotoByFileID(ctx, chatID, fileID); err != nil {
+		return fmt.Errorf("failed to send photo by file_id: %w", err)
+	}
+
+	return nil
+}
+
 // EditMessageReplyMarkup редактирует reply_markup сообщения (убирает кнопки, если передать пустой reply_markup)
 func (s *Service) EditMessageReplyMarkup(ctx context.Context, botID domain.BotId, chatID int64, messageID int64, replyMarkup map[string]interface{}) error {
 	client, ok := s.TelegramClients[botID]
