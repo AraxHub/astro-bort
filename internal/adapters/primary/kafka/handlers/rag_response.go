@@ -85,6 +85,14 @@ func (h *RAGResponseHandler) HandleMessage(ctx context.Context, key string, valu
 
 // handleImageResponse обрабатывает ответ с темой для фото
 func (h *RAGResponseHandler) handleImageResponse(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, theme string) error {
+	// Если тема "Nothing", картинка не нужна - просто игнорируем
+	if theme == "Nothing" {
+		h.Log.Debug("image not needed (Nothing theme)",
+			"request_id", requestID,
+			"chat_id", chatID)
+		return nil
+	}
+
 	if h.AstroService != nil && !h.AstroService.IsLastRequestID(chatID, requestID) {
 		h.Log.Debug("ignoring image response for outdated request",
 			"request_id", requestID,
