@@ -29,10 +29,15 @@ const (
 
 // Этапы фазы приёма (PhaseReceive)
 const (
-	StageGetRequest   RequestStage = "get_request"   // получение запроса из БД
-	StageSaveResponse RequestStage = "save_response" // сохранение ответа в БД
-	StageGetUser      RequestStage = "get_user"      // получение пользователя из БД
-	StageSendTelegram RequestStage = "send_telegram" // отправка сообщения в Telegram
+	StageGetRequest      RequestStage = "get_request"       // получение запроса из БД
+	StageSaveResponse    RequestStage = "save_response"     // сохранение ответа в БД
+	StageGetUser         RequestStage = "get_user"           // получение пользователя из БД
+	StageSendTelegram    RequestStage = "send_telegram"      // отправка сообщения в Telegram
+	StageGetImageUsage   RequestStage = "get_image_usage"   // получение статистики использования картинок
+	StageGetImages       RequestStage = "get_images"         // получение картинок по теме
+	StageSelectImage     RequestStage = "select_image"       // выбор картинки по алгоритму
+	StageSendPhoto       RequestStage = "send_photo"          // отправка фото в Telegram
+	StageIncrementUsage  RequestStage = "increment_usage"     // инкремент счётчика использования
 )
 
 // GetPhase возвращает фазу для этапа
@@ -40,7 +45,8 @@ func (s RequestStage) GetPhase() RequestPhase {
 	switch s {
 	case StageCreateRequest, StageLoadNatalChart, StageKafkaSend:
 		return PhaseSend
-	case StageGetRequest, StageSaveResponse, StageGetUser, StageSendTelegram:
+	case StageGetRequest, StageSaveResponse, StageGetUser, StageSendTelegram,
+		StageGetImageUsage, StageGetImages, StageSelectImage, StageSendPhoto, StageIncrementUsage:
 		return PhaseReceive
 	default:
 		return RequestPhaseUndefined

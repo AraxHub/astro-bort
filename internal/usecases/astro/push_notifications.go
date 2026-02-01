@@ -193,6 +193,9 @@ func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain
 	}
 
 	if s.KafkaProducer != nil {
+		// Сохраняем request_id как последний для этого чата
+		s.setLastRequestID(user.TelegramChatID, request.ID)
+
 		_, _, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport, request.RequestType)
 		if err != nil {
 			s.Log.Error("failed to send weekly forecast request to kafka",

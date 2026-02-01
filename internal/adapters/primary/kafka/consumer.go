@@ -126,8 +126,12 @@ func (h *consumerGroupHandler) ConsumeClaim(session sarama.ConsumerGroupSession,
 
 			key := string(message.Key)
 			value := message.Value
+			headers := make([]sarama.RecordHeader, len(message.Headers))
+			for i, h := range message.Headers {
+				headers[i] = *h
+			}
 
-			if err := h.handler.HandleMessage(session.Context(), key, value); err != nil {
+			if err := h.handler.HandleMessage(session.Context(), key, value, headers); err != nil {
 				if domain.IsBusinessError(err) {
 					continue
 				}

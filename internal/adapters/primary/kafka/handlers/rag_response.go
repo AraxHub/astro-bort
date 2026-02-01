@@ -7,7 +7,10 @@ import (
 
 	"log/slog"
 
+	"github.com/IBM/sarama"
+
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
+	astroUsecase "github.com/admin/tg-bots/astro-bot/internal/usecases/astro"
 	"github.com/google/uuid"
 
 	kafkaPorts "github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
@@ -16,20 +19,39 @@ import (
 
 // RAGResponseHandler обрабатывает ответы от RAG
 type RAGResponseHandler struct {
+	AstroService    *astroUsecase.Service
 	TelegramService *telegramService.Service
 	Log             *slog.Logger
 }
 
 // NewRAGResponseHandler создаёт новый handler для ответов от RAG
-func NewRAGResponseHandler(telegramService *telegramService.Service, log *slog.Logger) kafkaPorts.MessageHandler {
+func NewRAGResponseHandler(
+	astroService *astroUsecase.Service,
+	telegramService *telegramService.Service,
+	log *slog.Logger,
+) kafkaPorts.MessageHandler {
 	return &RAGResponseHandler{
+		AstroService:    astroService,
 		TelegramService: telegramService,
 		Log:             log,
 	}
 }
 
+// getHeaderValue получает значение хэдера по ключу
+func getHeaderValue(headers []sarama.RecordHeader, key string) string {
+	for _, header := range headers {
+		if string(header.Key) == key {
+			return string(header.Value)
+		}
+	}
+	return ""
+}
+
 // HandleMessage обрабатывает сообщение от RAG
-func (h *RAGResponseHandler) HandleMessage(ctx context.Context, key string, value []byte) error {
+func (h *RAGResponseHandler) HandleMessage(ctx context.Context, key string, value []byte, headers []sarama.RecordHeader) error {
+	action := getHeaderValue(headers, "action")
+
+	// Парсим value
 	var response RAGResponseMessage
 	if err := json.Unmarshal(value, &response); err != nil {
 		return fmt.Errorf("failed to unmarshal RAG response: %w", err)
@@ -49,18 +71,38 @@ func (h *RAGResponseHandler) HandleMessage(ctx context.Context, key string, valu
 		return fmt.Errorf("chat_id is required in RAG response")
 	}
 
-	h.Log.Debug("processing RAG response",
-		"request_id", requestID,
-		"bot_id", botID,
-		"chat_id", response.ChatID,
-		"response_length", len(response.ResponseText),
-	)
+	switch action {
+	case "image_type":
+		return h.handleImageResponse(ctx, requestID, botID, response.ChatID, response.ResponseText)
+	case "Nothing":
+		return nil
+	case "chat":
+		return h.handleTextResponse(ctx, requestID, botID, response.ChatID, response.ResponseText)
+	default:
+		return h.handleTextResponse(ctx, requestID, botID, response.ChatID, response.ResponseText)
+	}
+}
 
-	if err := h.TelegramService.HandleRAGResponse(ctx, requestID, botID, response.ChatID, response.ResponseText); err != nil {
-		return fmt.Errorf("failed to handle RAG response: %w", err)
+// handleImageResponse обрабатывает ответ с темой для фото
+func (h *RAGResponseHandler) handleImageResponse(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, theme string) error {
+	if h.AstroService != nil && !h.AstroService.IsLastRequestID(chatID, requestID) {
+		h.Log.Debug("ignoring image response for outdated request",
+			"request_id", requestID,
+			"chat_id", chatID,
+			"theme", theme)
+		return nil // Не ошибка, просто устаревший запрос
 	}
 
-	return nil
+	if h.AstroService != nil {
+		return h.AstroService.SendImageForTheme(ctx, requestID, botID, chatID, theme)
+	}
+
+	return fmt.Errorf("astro service not configured")
+}
+
+// handleTextResponse обрабатывает текстовый ответ
+func (h *RAGResponseHandler) handleTextResponse(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, responseText string) error {
+	return h.TelegramService.HandleRAGResponse(ctx, requestID, botID, chatID, responseText)
 }
 
 // RAGResponseMessage структура ответа от RAG

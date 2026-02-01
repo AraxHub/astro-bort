@@ -16,6 +16,7 @@ import (
 	astroApiAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/astroApi"
 	kafkaAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/pg"
+	inmemoryAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/inmemory"
 	redisAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/redis"
 	s3Adapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/storage/s3"
 	tgAdapter "github.com/admin/tg-bots/astro-bot/internal/adapters/secondary/telegram"
@@ -65,10 +66,6 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 	}
 
 	externalServices := a.initExternalServices()
-	kafkaProducers, kafkaConsumers, err := a.initKafka(ctx, tgService)
-	if err != nil {
-		return nil, fmt.Errorf("failed to init kafka: %w", err)
-	}
 
 	// S3 Client - опциональный
 	var s3Client storage.IS3Client
@@ -82,7 +79,22 @@ func (a *App) initDependencies(ctx context.Context) (*Dependencies, error) {
 		}
 	}
 
-	astroUseCase := a.initUseCases(repos, tgService, externalServices, kafkaProducers, s3Client)
+	// Создаём Kafka producers сначала (без consumers)
+	kafkaProducers, err := a.initKafkaProducers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init kafka producers: %w", err)
+	}
+
+	// Создаём in-memory кэш для последних request_id
+	requestCache := inmemoryAdapter.NewRequestCache()
+
+	astroUseCase := a.initUseCases(repos, tgService, externalServices, kafkaProducers, requestCache, s3Client)
+
+	// Теперь создаём Kafka consumers с astroUseCase
+	kafkaConsumers, err := a.initKafkaConsumers(ctx, tgService, astroUseCase)
+	if err != nil {
+		return nil, fmt.Errorf("failed to init kafka consumers: %w", err)
+	}
 	tgService.SetBotServices(map[domain.BotType]service.IBotService{
 		domain.BotTypeAstro: astroUseCase,
 	})
@@ -210,17 +222,12 @@ func (a *App) initTelegram(ctx context.Context) (
 	return clients, tgSvc, nil
 }
 
-// initKafka инициализирует Kafka producers и consumers
-func (a *App) initKafka(
-	ctx context.Context,
-	tgService *telegramService.Service,
-) (
+// initKafkaProducers инициализирует только Kafka producers
+func (a *App) initKafkaProducers(ctx context.Context) (
 	producers map[string]*kafkaAdapter.Producer,
-	consumers map[string]*kafkaConsumerAdapter.Consumer,
 	err error,
 ) {
 	producers = make(map[string]*kafkaAdapter.Producer)
-	consumers = make(map[string]*kafkaConsumerAdapter.Consumer)
 
 	for _, kafkaCfg := range a.Cfg.Kafka.List {
 		// Producer: есть topic, но нет consumer group
@@ -232,10 +239,26 @@ func (a *App) initKafka(
 			}
 			producers[kafkaCfg.Name] = prod
 		}
+	}
 
+	return producers, nil
+}
+
+// initKafkaConsumers инициализирует только Kafka consumers
+func (a *App) initKafkaConsumers(
+	ctx context.Context,
+	tgService *telegramService.Service,
+	astroUseCase *astroUsecase.Service,
+) (
+	consumers map[string]*kafkaConsumerAdapter.Consumer,
+	err error,
+) {
+	consumers = make(map[string]*kafkaConsumerAdapter.Consumer)
+
+	for _, kafkaCfg := range a.Cfg.Kafka.List {
 		// Consumer: есть consumer group
 		if kafkaCfg.Config.ConsumerGroup != "" {
-			handler := a.createHandlerForTopic(kafkaCfg.Name, tgService)
+			handler := a.createHandlerForTopic(kafkaCfg.Name, tgService, astroUseCase)
 			if handler == nil {
 				a.Log.Warn("no handler for kafka topic, skipping consumer", "name", kafkaCfg.Name)
 				continue
@@ -250,7 +273,7 @@ func (a *App) initKafka(
 		}
 	}
 
-	return producers, consumers, nil
+	return consumers, nil
 }
 
 // initUseCases инициализирует UseCases приложения
@@ -259,6 +282,7 @@ func (a *App) initUseCases(
 	tgService *telegramService.Service,
 	externalServices *externalServices,
 	kafkaProducers map[string]*kafkaAdapter.Producer,
+	requestCache cache.IRequestCache,
 	s3Client storage.IS3Client,
 ) *astroUsecase.Service {
 	var ragProducer kafka.IKafkaProducer
@@ -285,6 +309,7 @@ func (a *App) initUseCases(
 		ragProducer,              // может быть nil
 		externalServices.Alerter, // может быть nil
 		externalServices.Cache,   // может быть nil
+		requestCache,             // in-memory кэш для request_id
 		s3Client,                 // может быть nil
 		repos.Image,              // может быть nil
 		repos.ImageUsage,         // может быть nil
@@ -451,10 +476,11 @@ func (a *App) initPostgres() (*sqlx.DB, error) {
 func (a *App) createHandlerForTopic(
 	topicName string,
 	tgService *telegramService.Service,
+	astroUseCase *astroUsecase.Service,
 ) kafka.MessageHandler {
 	switch topicName {
 	case "responses":
-		return kafkaHandlers.NewRAGResponseHandler(tgService, a.Log)
+		return kafkaHandlers.NewRAGResponseHandler(astroUseCase, tgService, a.Log)
 	default:
 		a.Log.Warn("unknown kafka topic, using default handler", "topic", topicName)
 		return nil

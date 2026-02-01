@@ -30,7 +30,7 @@ type PhotoSize struct {
 
 // MessagePhoto сообщение с фото
 type MessagePhoto struct {
-	MessageID int64      `json:"message_id"`
+	MessageID int64       `json:"message_id"`
 	Chat      ChatInfo    `json:"chat"`
 	Photo     []PhotoSize `json:"photo"`
 	Date      int64       `json:"date"`
@@ -38,7 +38,7 @@ type MessagePhoto struct {
 
 // SendPhotoResult результат отправки фото
 type SendPhotoResult struct {
-	MessageID int64      `json:"message_id"`
+	MessageID int64       `json:"message_id"`
 	Chat      ChatInfo    `json:"chat"`
 	Photo     []PhotoSize `json:"photo"`
 	Date      int64       `json:"date"`
@@ -177,4 +177,76 @@ func (c *Client) SendPhoto(ctx context.Context, chatID int64, messageThreadID *i
 		"filename", filename)
 
 	return fileID, nil
+}
+
+// SendPhotoByFileID отправляет фото в чат используя уже существующий file_id
+func (c *Client) SendPhotoByFileID(ctx context.Context, chatID int64, fileID string) error {
+	reqBody := map[string]interface{}{
+		"chat_id": chatID,
+		"photo":   fileID,
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		c.log.Error("failed to marshal sendPhotoByFileID request",
+			"error", err,
+			"chat_id", chatID)
+		return fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := c.baseURL + "/sendPhoto"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonBody))
+	if err != nil {
+		c.log.Error("failed to create sendPhotoByFileID request",
+			"error", err,
+			"chat_id", chatID)
+		return fmt.Errorf("telegram create request failed [chat_id=%d]: %w", chatID, err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		c.log.Error("telegram sendPhotoByFileID request failed",
+			"error", err,
+			"chat_id", chatID,
+			"file_id", fileID)
+		return fmt.Errorf("telegram request failed [chat_id=%d]: %w", chatID, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.log.Warn("failed to read sendPhotoByFileID response body",
+			"error", err,
+			"chat_id", chatID,
+			"status_code", resp.StatusCode)
+		return fmt.Errorf("telegram read response failed [chat_id=%d, status=%d]: %w",
+			chatID, resp.StatusCode, err)
+	}
+
+	var apiResp SendPhotoResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		c.log.Error("failed to unmarshal sendPhotoByFileID response",
+			"error", err,
+			"chat_id", chatID,
+			"status_code", resp.StatusCode,
+			"body_preview", truncateString(string(body), 200),
+		)
+		return fmt.Errorf("telegram unmarshal failed [chat_id=%d, status=%d]: %w",
+			chatID, resp.StatusCode, err)
+	}
+
+	if !apiResp.OK {
+		c.log.Error("telegram API error",
+			"error_code", apiResp.ErrorCode,
+			"description", apiResp.Description,
+			"chat_id", chatID,
+			"status_code", resp.StatusCode,
+		)
+		return fmt.Errorf("telegram API error [code=%d, chat_id=%d]: %s",
+			apiResp.ErrorCode, chatID, apiResp.Description)
+	}
+
+	return nil
 }

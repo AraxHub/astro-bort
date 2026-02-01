@@ -387,6 +387,9 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 	}
 
 	if s.KafkaProducer != nil {
+		// Сохраняем request_id как последний для этого чата
+		s.setLastRequestID(user.TelegramChatID, request.ID)
+
 		partition, offset, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport, request.RequestType)
 		if err != nil {
 			statusStage = domain.StageKafkaSend
