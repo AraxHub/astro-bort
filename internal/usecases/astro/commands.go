@@ -32,7 +32,7 @@ func (s *Service) HandleStart(ctx context.Context, botID domain.BotId, user *dom
 
 	// edge case - дата есть, карты нет, пытаемся рассчитать
 	if user.NatalChartFetchedAt == nil {
-		if err := s.fetchAndSaveNatalChart(ctx, user); err != nil {
+		if err := s.fetchAndSaveNatalChart(ctx, user, botID, false); err != nil {
 			s.Log.Error("failed to fetch natal chart",
 				"error", err,
 				"user_id", user.ID,

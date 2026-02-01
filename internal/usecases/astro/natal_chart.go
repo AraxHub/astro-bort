@@ -9,7 +9,8 @@ import (
 )
 
 // fetchAndSaveNatalChart получает натальную карту из астро-API и сохраняет её
-func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User) error {
+// rerank - если true, отправляет натальную карту в Kafka для rerank (только при начальной регистрации)
+func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User, botID domain.BotId, rerank bool) error {
 	if user.BirthDateTime == nil {
 		return fmt.Errorf("birth date is not set")
 	}
@@ -77,6 +78,26 @@ func (s *Service) fetchAndSaveNatalChart(ctx context.Context, user *domain.User)
 
 	if err := s.UserRepo.Update(ctx, user); err != nil {
 		return fmt.Errorf("failed to save natal report: %w", err)
+	}
+
+	// Отправляем в Kafka для rerank-natal только если флаг rerank = true (начальная регистрация)
+	if rerank && s.KafkaProducer != nil {
+		key := user.ID.String()
+		if err := s.KafkaProducer.SendRerankNatal(ctx, key, botID, user.TelegramChatID, natalReport); err != nil {
+			s.Log.Warn("failed to send natal report to kafka for rerank",
+				"error", err,
+				"user_id", user.ID,
+				"chat_id", user.TelegramChatID,
+				"bot_id", botID,
+			)
+			// Не возвращаем ошибку - это не критично для сохранения
+		} else {
+			s.Log.Debug("natal report sent to kafka for rerank",
+				"user_id", user.ID,
+				"chat_id", user.TelegramChatID,
+				"bot_id", botID,
+			)
+		}
 	}
 
 	s.Log.Info("natal report saved",

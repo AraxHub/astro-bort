@@ -137,8 +137,8 @@ func (s *Service) handleBirthDateInput(ctx context.Context, botID domain.BotId, 
 		return s.sendMessage(ctx, botID, user.TelegramChatID, texts.ErrorSaveData)
 	}
 
-	// Получаем натальную карту
-	if err := s.fetchAndSaveNatalChart(ctx, user); err != nil {
+	// Получаем натальную карту (rerank = true только при начальной регистрации)
+	if err := s.fetchAndSaveNatalChart(ctx, user, botID, true); err != nil {
 		s.Log.Error("failed to fetch natal chart",
 			"error", err,
 			"user_id", user.ID,
@@ -312,7 +312,7 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 
 	// edge case - вопрос задаёт, а карты нет, если астроапи отдало ошибку, но дата сохранена - догружаем по ходу
 	if user.NatalChartFetchedAt == nil {
-		if err = s.fetchAndSaveNatalChart(ctx, user); err != nil {
+		if err = s.fetchAndSaveNatalChart(ctx, user, botID, false); err != nil {
 			statusStage = domain.StageLoadNatalChart
 			statusErrorCode = "NATAL_CHART_NOT_FOUND"
 			s.Log.Error("failed to fetch natal chart",

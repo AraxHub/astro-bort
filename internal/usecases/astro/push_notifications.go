@@ -146,7 +146,7 @@ func (s *Service) HandleWeeklyForecastCallback(ctx context.Context, botID domain
 	ragPrompt := texts.WeeklyForecastRAGPrompt
 
 	if user.NatalChartFetchedAt == nil {
-		if err := s.fetchAndSaveNatalChart(ctx, user); err != nil {
+		if err := s.fetchAndSaveNatalChart(ctx, user, botID, false); err != nil {
 			s.Log.Error("failed to fetch natal chart for weekly forecast",
 				"error", err,
 				"user_id", user.ID,

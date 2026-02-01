@@ -129,6 +129,55 @@ func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botI
 	return partition, offset, nil
 }
 
+// SendRerankNatal отправляет натальную карту для rerank с нужными headers
+func (p *Producer) SendRerankNatal(ctx context.Context, key string, botID domain.BotId, chatID int64, natalReport []byte) error {
+	headers := []sarama.RecordHeader{
+		{
+			Key:   []byte("action"),
+			Value: []byte("rerank_natal"),
+		},
+		{
+			Key:   []byte("bot_id"),
+			Value: []byte(string(botID)),
+		},
+		{
+			Key:   []byte("chat_id"),
+			Value: []byte(fmt.Sprintf("%d", chatID)),
+		},
+	}
+
+	msg := &sarama.ProducerMessage{
+		Topic:   p.cfg.Topic,
+		Key:     sarama.StringEncoder(key),
+		Value:   sarama.ByteEncoder(natalReport),
+		Headers: headers,
+	}
+
+	partition, offset, err := p.producer.SendMessage(msg)
+	if err != nil {
+		p.log.Debug("kafka send rerank natal failed",
+			"error", err,
+			"topic", p.cfg.Topic,
+			"key", key,
+			"bot_id", botID,
+			"chat_id", chatID,
+		)
+		return fmt.Errorf("kafka send rerank natal failed [topic=%s, key=%s]: %w",
+			p.cfg.Topic, key, err)
+	}
+
+	p.log.Debug("natal report sent to kafka for rerank",
+		"topic", p.cfg.Topic,
+		"partition", partition,
+		"offset", offset,
+		"key", key,
+		"bot_id", botID,
+		"chat_id", chatID,
+	)
+
+	return nil
+}
+
 // Send отправляет произвольное сообщение
 func (p *Producer) Send(ctx context.Context, key string, value []byte) error {
 	msg := &sarama.ProducerMessage{
