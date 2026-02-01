@@ -16,6 +16,7 @@ type ITelegramService interface {
 	SendMessageWithKeyboardAndMarkdown(ctx context.Context, botID domain.BotId, chatID int64, text string, keyboard map[string]interface{}) error
 	SendPhoto(ctx context.Context, botID domain.BotId, chatID int64, messageThreadID *int64, photoData []byte, filename string) (string, error) // возвращает file_id
 	SendPhotoByFileID(ctx context.Context, botID domain.BotId, chatID int64, fileID string) error
+	DeleteMessage(ctx context.Context, botID domain.BotId, chatID int64, messageID int64) error
 	AnswerCallbackQuery(ctx context.Context, botID domain.BotId, callbackID string, text string, showAlert bool) error
 	EditMessageReplyMarkup(ctx context.Context, botID domain.BotId, chatID int64, messageID int64, replyMarkup map[string]interface{}) error
 }

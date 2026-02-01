@@ -101,6 +101,35 @@ func (s *Service) setLastRequestID(chatID int64, requestID uuid.UUID) {
 	}
 }
 
+// setRequestInfo сохраняет информацию о запросе (request_id и tech_msg_id)
+func (s *Service) setRequestInfo(chatID int64, requestID uuid.UUID, techMsgID int64) {
+	if s.RequestCache != nil {
+		s.RequestCache.SetRequestInfo(chatID, requestID, techMsgID)
+	}
+}
+
+// deleteTechMessageIfNeeded удаляет техническое сообщение если нужно (атомарно)
+func (s *Service) deleteTechMessageIfNeeded(ctx context.Context, botID domain.BotId, chatID int64, requestID uuid.UUID) {
+	if s.RequestCache == nil || s.TelegramService == nil {
+		return
+	}
+
+	techMsgID, shouldDelete := s.RequestCache.TryDeleteTechMsg(chatID, requestID)
+	if !shouldDelete {
+		return // уже удалено или устаревший запрос
+	}
+
+	// Удаляем техническое сообщение (ошибка не критична)
+	if err := s.TelegramService.DeleteMessage(ctx, botID, chatID, techMsgID); err != nil {
+		s.Log.Warn("failed to delete tech message (non-critical)",
+			"error", err,
+			"chat_id", chatID,
+			"request_id", requestID,
+			"tech_msg_id", techMsgID)
+		// Не возвращаем ошибку - продолжаем отправку ответа
+	}
+}
+
 // IsLastRequestID публичный метод для проверки последнего request_id (для Kafka handler)
 func (s *Service) IsLastRequestID(chatID int64, requestID uuid.UUID) bool {
 	if s.RequestCache == nil {

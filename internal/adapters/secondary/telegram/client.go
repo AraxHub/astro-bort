@@ -486,3 +486,103 @@ func (c *Client) EditMessageReplyMarkup(ctx context.Context, chatID int64, messa
 	)
 	return nil
 }
+
+// DeleteMessageRequest запрос на удаление сообщения
+type DeleteMessageRequest struct {
+	ChatID    int64 `json:"chat_id"`
+	MessageID int64 `json:"message_id"`
+}
+
+// DeleteMessage удаляет сообщение из чата
+func (c *Client) DeleteMessage(ctx context.Context, chatID int64, messageID int64) error {
+	reqBody := DeleteMessageRequest{
+		ChatID:    chatID,
+		MessageID: messageID,
+	}
+
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		c.log.Error("failed to marshal delete message request",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+		)
+		return fmt.Errorf("telegram marshal failed [chat_id=%d, message_id=%d]: %w", chatID, messageID, err)
+	}
+
+	url := c.baseURL + "/deleteMessage"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		c.log.Error("failed to create delete message request",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+		)
+		return fmt.Errorf("telegram create request failed [chat_id=%d, message_id=%d]: %w", chatID, messageID, err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		c.log.Debug("telegram delete message request failed",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+		)
+		return fmt.Errorf("telegram request failed [chat_id=%d, message_id=%d]: %w", chatID, messageID, err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		c.log.Error("failed to read delete message response body",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+			"status_code", resp.StatusCode,
+		)
+		return fmt.Errorf("telegram read body failed [chat_id=%d, message_id=%d, status=%d]: %w",
+			chatID, messageID, resp.StatusCode, err)
+	}
+
+	var apiResp APIResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		c.log.Error("failed to unmarshal delete message response",
+			"error", err,
+			"chat_id", chatID,
+			"message_id", messageID,
+			"status_code", resp.StatusCode,
+			"body_preview", truncateString(string(body), 200),
+		)
+		return fmt.Errorf("telegram unmarshal failed [chat_id=%d, message_id=%d, status=%d]: %w",
+			chatID, messageID, resp.StatusCode, err)
+	}
+
+	if !apiResp.OK {
+		// Если сообщение уже удалено или не найдено - это не критичная ошибка
+		if apiResp.ErrorCode == 400 && (apiResp.Description == "Bad Request: message to delete not found" ||
+			apiResp.Description == "Bad Request: message can't be deleted") {
+			c.log.Debug("message already deleted or can't be deleted",
+				"chat_id", chatID,
+				"message_id", messageID,
+			)
+			return nil // Не возвращаем ошибку, если сообщение уже удалено
+		}
+		c.log.Debug("telegram API error on delete message",
+			"error_code", apiResp.ErrorCode,
+			"description", apiResp.Description,
+			"chat_id", chatID,
+			"message_id", messageID,
+			"status_code", resp.StatusCode,
+		)
+		return fmt.Errorf("telegram API error [code=%d, chat_id=%d, message_id=%d]: %s",
+			apiResp.ErrorCode, chatID, messageID, apiResp.Description)
+	}
+
+	c.log.Debug("message deleted successfully",
+		"chat_id", chatID,
+		"message_id", messageID,
+	)
+	return nil
+}

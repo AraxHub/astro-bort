@@ -190,11 +190,7 @@ func (s *Service) SendImageForTheme(ctx context.Context, requestID uuid.UUID, bo
 		}
 	}
 
-	s.Log.Debug("selected image for theme",
-		"theme", theme,
-		"filename", selectedImage.Filename,
-		"count", usage.UsedImages[selectedImage.Filename],
-		"request_id", requestID)
+	s.deleteTechMessageIfNeeded(ctx, botID, chatID, requestID)
 
 	// Отправляем фото в Telegram используя file_id
 	statusStage = domain.StageSendPhoto

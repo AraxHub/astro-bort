@@ -128,6 +128,20 @@ func (s *Service) SendPhotoByFileID(ctx context.Context, botID domain.BotId, cha
 	return nil
 }
 
+// DeleteMessage удаляет сообщение из чата
+func (s *Service) DeleteMessage(ctx context.Context, botID domain.BotId, chatID int64, messageID int64) error {
+	client, ok := s.TelegramClients[botID]
+	if !ok {
+		return fmt.Errorf("telegram client not found for bot_id: %s", botID)
+	}
+
+	if err := client.DeleteMessage(ctx, chatID, messageID); err != nil {
+		return fmt.Errorf("failed to delete message: %w", err)
+	}
+
+	return nil
+}
+
 // EditMessageReplyMarkup редактирует reply_markup сообщения (убирает кнопки, если передать пустой reply_markup)
 func (s *Service) EditMessageReplyMarkup(ctx context.Context, botID domain.BotId, chatID int64, messageID int64, replyMarkup map[string]interface{}) error {
 	client, ok := s.TelegramClients[botID]

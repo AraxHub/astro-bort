@@ -432,5 +432,16 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		)
 	}
 
-	return s.sendMessage(ctx, botID, user.TelegramChatID, texts.UserQuestionReceived)
+	// Отправляем техническое сообщение и сохраняем message_id
+	techMsgID, err := s.TelegramService.SendMessageWithID(ctx, botID, user.TelegramChatID, texts.UserQuestionReceived)
+	if err != nil {
+		s.Log.Error("failed to send tech message",
+			"error", err,
+			"request_id", requestID,
+			"chat_id", user.TelegramChatID)
+	} else {
+		s.setRequestInfo(user.TelegramChatID, request.ID, techMsgID)
+	}
+
+	return nil
 }

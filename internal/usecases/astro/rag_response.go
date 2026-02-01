@@ -13,9 +13,9 @@ import (
 )
 
 const (
-	maxMessageLength      = 4000  // максимальная длина сообщения Telegram
-	chunkSize             = 3900  // размер части для разбиения
-	messageDelaySeconds   = 1     // задержка между отправками в секундах
+	maxMessageLength    = 4000 // максимальная длина сообщения Telegram
+	chunkSize           = 3900 // размер части для разбиения
+	messageDelaySeconds = 1    // задержка между отправками в секундах
 )
 
 // HandleRAGResponse обрабатывает ответ от RAG
@@ -78,6 +78,8 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 		)
 		return fmt.Errorf("failed to update request: %w", err)
 	}
+
+	s.deleteTechMessageIfNeeded(ctx, botID, chatID, requestID)
 
 	// Отправляем сообщение с bot_id и chat_id из Kafka (без SELECT User)
 	// Если сообщение длиннее maxMessageLength, разбиваем на части
@@ -251,7 +253,7 @@ func findWordBreak(runes []rune, start, end int) int {
 	for i := end - 1; i >= start && i >= end-100; i-- { // проверяем последние 100 символов
 		isSpace := unicode.IsSpace(runes[i])
 		isPunct := unicode.IsPunct(runes[i]) && runes[i] != '-' && runes[i] != '_'
-		
+
 		if (isSpace || isPunct) && i > bestBreak {
 			bestBreak = i
 		}
