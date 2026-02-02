@@ -146,10 +146,27 @@ func (p *Producer) SendRerankNatal(ctx context.Context, key string, botID domain
 		},
 	}
 
+	// Формируем value с полем request_text для совместимости с контрактом
+	var natalReportRaw json.RawMessage
+	if len(natalReport) > 0 {
+		if !json.Valid(natalReport) {
+			return fmt.Errorf("natal_report is not valid JSON")
+		}
+		natalReportRaw = json.RawMessage(natalReport)
+	}
+
+	valueData := map[string]interface{}{
+		"natal_chart": natalReportRaw,
+	}
+	valueBytes, err := json.Marshal(valueData)
+	if err != nil {
+		return fmt.Errorf("failed to marshal value: %w", err)
+	}
+
 	msg := &sarama.ProducerMessage{
 		Topic:   p.cfg.Topic,
 		Key:     sarama.StringEncoder(key),
-		Value:   sarama.ByteEncoder(natalReport),
+		Value:   sarama.ByteEncoder(valueBytes),
 		Headers: headers,
 	}
 
