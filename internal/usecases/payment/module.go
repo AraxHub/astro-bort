@@ -703,7 +703,7 @@ func (s *Service) HandleSuccessfulPayment(
 	s.sendAlertOrLog(ctx, statusSucceeded)
 
 	// Уведомляем пользователя об успешной оплате
-	message := fmt.Sprintf("✅ Платёж успешно обработан!\n\nВы приобрели: %s", payment.ProductTitle)
+	message := fmt.Sprintf("✅ Платёж успешно обработан!\n\nВы приобрели: %s\n\nПовторите, пожалуйста, запрос", payment.ProductTitle)
 	if err := s.TelegramService.SendMessage(ctx, botID, chatID, message); err != nil {
 		s.Log.Warn("failed to send payment success notification",
 			"error", err,
