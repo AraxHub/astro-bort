@@ -190,8 +190,6 @@ func (s *Service) SendImageForTheme(ctx context.Context, requestID uuid.UUID, bo
 		}
 	}
 
-	s.deleteTechMessageIfNeeded(ctx, botID, chatID, requestID)
-
 	// Отправляем фото в Telegram используя file_id
 	statusStage = domain.StageSendPhoto
 	if selectedImage.TgFileID == "" {
