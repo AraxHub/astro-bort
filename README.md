@@ -9,6 +9,9 @@ Telegram бот для астрологических консультаций �
 **Key:** `request_id` (UUID)
 
 **Headers:**
+- `request_id` (обязательный, UUID string)
+- `bot_id` (обязательный, string)
+- `chat_id` (обязательный, string)
 - `action` (обязательный): `"chat"` | `"prediction"` | `"rerank_natal"`
 - `onboarding` (bool, опционально)
 - `summarize` (bool, опционально)
@@ -18,11 +21,8 @@ Telegram бот для астрологических консультаций �
 **Value (JSON):**
 ```json
 {
-  "request_id": "uuid",
-  "bot_id": "astro1",
-  "chat_id": 123456789,
   "request_text": "текст запроса",
-  "natal_chart": { /* JSON */ }
+  "natal_chart": { /* JSON натальной карты */ }
 }
 ```
 
@@ -38,8 +38,8 @@ Telegram бот для астрологических консультаций �
 | Rerank натальной карты | - | - | - | - | `""` |
 
 **Особые случаи:**
-- **Rerank натальной карты:** `action: "rerank_natal"`, headers: `bot_id`, `chat_id`, value: `request_text: ""`, `natal_chart`
-- **Пуш "Прогноз на неделю":** `action: "prediction"`, без дополнительных headers
+- **Rerank натальной карты:** `action: "rerank_natal"`, headers: `bot_id`, `chat_id` (без `request_id`), value: `request_text: ""`, `natal_chart`
+- **Пуш "Прогноз на неделю":** `action: "prediction"`, headers: `request_id`, `bot_id`, `chat_id`, `action`, value: `request_text` (промпт), `natal_chart`
 
 ### Получение ответов от RAG (topic: `responses`)
 
