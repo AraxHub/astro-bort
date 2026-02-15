@@ -81,6 +81,10 @@ func (s *Service) HandleCallbackQuery(ctx context.Context, botID domain.BotId, c
 		return s.handlePremiumLimitPaymentCallback(ctx, botID, callbackQuery, user, callbackData)
 	}
 
+	if strings.HasPrefix(callbackData, "button_") {
+		return s.handleRAGCallback(ctx, botID, callbackQuery, user, callbackData)
+	}
+
 	// Неизвестный callback - отвечаем без текста
 	if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "", false); err != nil {
 		s.Log.Warn("failed to answer callback query", "error", err)
@@ -222,6 +226,52 @@ func (s *Service) handlePremiumLimitPaymentCallback(ctx context.Context, botID d
 	// Вызываем метод обработки callback в usecase
 	if err := botService.HandlePremiumLimitPaymentCallback(ctx, botID, user); err != nil {
 		return domain.WrapBusinessError(fmt.Errorf("failed to handle premium limit payment callback: %w", err))
+	}
+
+	return nil
+}
+
+// handleRAGCallback обрабатывает callback от кнопок ответов RAG
+func (s *Service) handleRAGCallback(ctx context.Context, botID domain.BotId, callbackQuery *domain.CallbackQuery, user *domain.User, callbackData string) error {
+	// Отвечаем на callback (убираем индикатор загрузки)
+	if err := s.AnswerCallbackQuery(ctx, botID, callbackQuery.ID, "", false); err != nil {
+		s.Log.Warn("failed to answer callback query", "error", err)
+	}
+
+	// Получаем message_id и chat_id из callback query
+	if callbackQuery.Message == nil {
+		s.Log.Warn("callback query has no message",
+			"callback_id", callbackQuery.ID,
+			"user_id", user.ID)
+		return nil
+	}
+
+	messageID := callbackQuery.Message.MessageID
+	var chatID int64
+	if callbackQuery.Message.Chat != nil {
+		chatID = callbackQuery.Message.Chat.ID
+	} else {
+		s.Log.Warn("callback query message has no chat",
+			"callback_id", callbackQuery.ID,
+			"user_id", user.ID,
+			"message_id", messageID)
+		return nil
+	}
+
+	// Получаем bot service для обработки
+	botType, err := s.GetBotType(botID)
+	if err != nil {
+		return fmt.Errorf("failed to get bot_type: %w", err)
+	}
+
+	botService, ok := s.BotTypeToUsecase[botType]
+	if !ok {
+		return fmt.Errorf("unknown bot_type: %s", botType)
+	}
+
+	// Вызываем метод обработки callback в usecase
+	if err := botService.HandleRAGCallback(ctx, botID, user, callbackData, messageID, chatID); err != nil {
+		return domain.WrapBusinessError(fmt.Errorf("failed to handle RAG callback: %w", err))
 	}
 
 	return nil

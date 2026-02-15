@@ -36,6 +36,7 @@ type userColumns struct {
 	IsPaid                  string
 	ManualGranted           string
 	FreeMsgCount            string
+	OnboardingCount         string
 }
 
 type Repository struct {
@@ -66,6 +67,7 @@ func New(db persistence.Persistence, log *slog.Logger) ports.IUserRepo {
 		IsPaid:                  "is_paid",
 		ManualGranted:           "manual_granted",
 		FreeMsgCount:            "free_msg_count",
+		OnboardingCount:         "onboarding_count",
 	}
 	return &Repository{
 		db:      db,
@@ -74,9 +76,9 @@ func New(db persistence.Persistence, log *slog.Logger) ports.IUserRepo {
 	}
 }
 
-// allColumns возвращает строку со всеми колонками (18 колонок)
+// allColumns возвращает строку со всеми колонками (19 колонок)
 func (r *Repository) allColumns() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
+	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
 		r.columns.ID,
 		r.columns.TelegramUserID,
 		r.columns.TelegramChatID,
@@ -94,12 +96,13 @@ func (r *Repository) allColumns() string {
 		r.columns.LastSeenAt,
 		r.columns.IsPaid,
 		r.columns.ManualGranted,
-		r.columns.FreeMsgCount)
+		r.columns.FreeMsgCount,
+		r.columns.OnboardingCount)
 }
 
-// allColumnsExceptNatalChart возвращает строку со всеми колонками кроме natal_chart (17 колонок)
+// allColumnsExceptNatalChart возвращает строку со всеми колонками кроме natal_chart (18 колонок)
 func (r *Repository) allColumnsExceptNatalChart() string {
-	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
+	return fmt.Sprintf("%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s",
 		r.columns.ID,
 		r.columns.TelegramUserID,
 		r.columns.TelegramChatID,
@@ -116,12 +119,13 @@ func (r *Repository) allColumnsExceptNatalChart() string {
 		r.columns.LastSeenAt,
 		r.columns.IsPaid,
 		r.columns.ManualGranted,
-		r.columns.FreeMsgCount)
+		r.columns.FreeMsgCount,
+		r.columns.OnboardingCount)
 }
 
 // Create создаёт нового пользователя
 func (r *Repository) Create(ctx context.Context, user *domain.User) error {
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 		r.columns.TableName,
 		r.allColumns())
 	err := r.db.Exec(ctx, query,
@@ -142,7 +146,8 @@ func (r *Repository) Create(ctx context.Context, user *domain.User) error {
 		user.LastSeenAt,
 		user.IsPaid,
 		user.ManualGranted,
-		user.FreeMsgCount)
+		user.FreeMsgCount,
+		user.OnboardingCount)
 	if err != nil {
 		r.Log.Error("failed to create user",
 			"error", err,
@@ -202,12 +207,34 @@ func (r *Repository) GetByID(ctx context.Context, id uuid.UUID) (*domain.User, e
 	return &user, nil
 }
 
+// GetByChatID получает пользователя по Telegram Chat ID (без natal_chart для ленивой загрузки)
+func (r *Repository) GetByChatID(ctx context.Context, chatID int64) (*domain.User, error) {
+	var user domain.User
+	query := fmt.Sprintf(`SELECT %s FROM %s WHERE %s = $1`,
+		r.allColumnsExceptNatalChart(),
+		r.columns.TableName,
+		r.columns.TelegramChatID)
+	err := r.db.Get(ctx, &user, query, chatID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			r.Log.Warn("user not found", "chat_id", chatID)
+			return nil, fmt.Errorf("user not found: %w", err)
+		}
+		r.Log.Error("failed to get user by chat id",
+			"error", err,
+			"chat_id", chatID)
+		return nil, fmt.Errorf("failed to get user by chat id: %w", err)
+	}
+	r.Log.Debug("user retrieved successfully", "chat_id", chatID, "user_id", user.ID)
+	return &user, nil
+}
+
 // Update обновляет пользователя
 func (r *Repository) Update(ctx context.Context, user *domain.User) error {
 	query := fmt.Sprintf(`UPDATE %s SET 
 		%s = $2, %s = $3, %s = $4, %s = $5, %s = $6, 
 		%s = $7, %s = $8, %s = $9, %s = $10, %s = $11, 
-		%s = $12, %s = $13, %s = $14
+		%s = $12, %s = $13, %s = $14, %s = $15
 		WHERE %s = $1`,
 		r.columns.TableName,
 		r.columns.TelegramUserID,
@@ -223,6 +250,7 @@ func (r *Repository) Update(ctx context.Context, user *domain.User) error {
 		r.columns.NatalChartFetchedAt,
 		r.columns.UpdatedAt,
 		r.columns.LastSeenAt,
+		r.columns.OnboardingCount,
 		r.columns.ID)
 	rowsAffected, err := r.db.ExecWithResult(ctx, query,
 		user.ID,
@@ -238,7 +266,8 @@ func (r *Repository) Update(ctx context.Context, user *domain.User) error {
 		user.NatalChart,
 		user.NatalChartFetchedAt,
 		user.UpdatedAt,
-		user.LastSeenAt)
+		user.LastSeenAt,
+		user.OnboardingCount)
 	if err != nil {
 		r.Log.Error("failed to update user",
 			"error", err,
@@ -332,7 +361,7 @@ func (r *Repository) WithTransaction(ctx context.Context, fn func(context.Contex
 
 // CreateTx создаёт пользователя в транзакции
 func (r *Repository) CreateTx(ctx context.Context, tx persistence.Transaction, user *domain.User) error {
-	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+	query := fmt.Sprintf(`INSERT INTO %s (%s) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 		r.columns.TableName,
 		r.allColumns())
 	err := tx.Exec(ctx, query,
@@ -353,7 +382,8 @@ func (r *Repository) CreateTx(ctx context.Context, tx persistence.Transaction, u
 		user.LastSeenAt,
 		user.IsPaid,
 		user.ManualGranted,
-		user.FreeMsgCount)
+		user.FreeMsgCount,
+		user.OnboardingCount)
 	if err != nil {
 		r.Log.Error("failed to create user in transaction",
 			"error", err,
@@ -372,7 +402,7 @@ func (r *Repository) UpdateTx(ctx context.Context, tx persistence.Transaction, u
 	query := fmt.Sprintf(`UPDATE %s SET 
 		%s = $2, %s = $3, %s = $4, %s = $5, %s = $6, 
 		%s = $7, %s = $8, %s = $9, %s = $10, %s = $11, 
-		%s = $12, %s = $13, %s = $14
+		%s = $12, %s = $13, %s = $14, %s = $15
 		WHERE %s = $1`,
 		r.columns.TableName,
 		r.columns.TelegramUserID,
@@ -388,6 +418,7 @@ func (r *Repository) UpdateTx(ctx context.Context, tx persistence.Transaction, u
 		r.columns.NatalChartFetchedAt,
 		r.columns.UpdatedAt,
 		r.columns.LastSeenAt,
+		r.columns.OnboardingCount,
 		r.columns.ID)
 	rowsAffected, err := tx.ExecWithResult(ctx, query,
 		user.ID,
@@ -403,7 +434,8 @@ func (r *Repository) UpdateTx(ctx context.Context, tx persistence.Transaction, u
 		user.NatalChart,
 		user.NatalChartFetchedAt,
 		user.UpdatedAt,
-		user.LastSeenAt)
+		user.LastSeenAt,
+		user.OnboardingCount)
 	if err != nil {
 		r.Log.Error("failed to update user in transaction",
 			"error", err,
@@ -490,6 +522,30 @@ func (r *Repository) UpdateFreeMsgCount(ctx context.Context, userID uuid.UUID) e
 		return fmt.Errorf("user not found")
 	}
 	r.Log.Debug("free_msg_count incremented successfully", "user_id", userID)
+	return nil
+}
+
+// UpdateOnboardingCount инкрементирует счётчик онбординга
+func (r *Repository) UpdateOnboardingCount(ctx context.Context, userID uuid.UUID) error {
+	now := time.Now()
+	query := fmt.Sprintf(`UPDATE %s SET %s = %s + 1, %s = $1 WHERE %s = $2`,
+		r.columns.TableName,
+		r.columns.OnboardingCount,
+		r.columns.OnboardingCount,
+		r.columns.UpdatedAt,
+		r.columns.ID)
+	rowsAffected, err := r.db.ExecWithResult(ctx, query, now, userID)
+	if err != nil {
+		r.Log.Error("failed to increment onboarding_count",
+			"error", err,
+			"user_id", userID)
+		return fmt.Errorf("failed to increment onboarding_count: %w", err)
+	}
+	if rowsAffected == 0 {
+		r.Log.Warn("user not found for increment onboarding_count", "user_id", userID)
+		return fmt.Errorf("user not found")
+	}
+	r.Log.Debug("onboarding_count incremented successfully", "user_id", userID)
 	return nil
 }
 

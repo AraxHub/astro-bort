@@ -25,4 +25,5 @@ type User struct {
 	IsPaid                  bool        `json:"is_paid" db:"is_paid"`               // платный статус пользователя (через платёж)
 	ManualGranted           bool        `json:"manual_granted" db:"manual_granted"` // платный доступ выдан вручную (админ)
 	FreeMsgCount            int         `json:"free_msg_count" db:"free_msg_count"` // счётчик бесплатных сообщений
+	OnboardingCount         int         `json:"onboarding_count" db:"onboarding_count"` // счётчик сообщений в онбординге (0-1 активный, ==2 summarize, >=3 пройден)
 }

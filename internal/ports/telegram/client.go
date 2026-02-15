@@ -9,5 +9,6 @@ type IClient interface {
 	SendMessage(ctx context.Context, chatID int64, text string) error
 	SendMessageWithMarkdown(ctx context.Context, chatID int64, text string) error
 	SendMessageWithKeyboard(ctx context.Context, chatID int64, text string, keyboard map[string]interface{}) error
+	SendMessageWithIDAndHTMLAndKeyboard(ctx context.Context, chatID int64, text string, keyboard map[string]interface{}) (int64, error)
 	AnswerCallbackQuery(ctx context.Context, callbackID string, text string, showAlert bool) error
 }

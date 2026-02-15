@@ -85,6 +85,21 @@ func (s *Service) SendMessageWithKeyboardAndMarkdown(ctx context.Context, botID 
 	return nil
 }
 
+// SendMessageWithIDAndHTMLAndKeyboard отправляет сообщение с HTML форматированием и клавиатурой, возвращает messageID
+func (s *Service) SendMessageWithIDAndHTMLAndKeyboard(ctx context.Context, botID domain.BotId, chatID int64, text string, keyboard map[string]interface{}) (int64, error) {
+	client, ok := s.TelegramClients[botID]
+	if !ok {
+		return 0, fmt.Errorf("telegram client not found for bot_id: %s", botID)
+	}
+
+	messageID, err := client.SendMessageWithIDAndHTMLAndKeyboard(ctx, chatID, text, keyboard)
+	if err != nil {
+		return 0, fmt.Errorf("failed to send message with HTML and keyboard: %w", err)
+	}
+
+	return messageID, nil
+}
+
 // AnswerCallbackQuery отправляет ответ на callback query
 func (s *Service) AnswerCallbackQuery(ctx context.Context, botID domain.BotId, callbackID string, text string, showAlert bool) error {
 	client, ok := s.TelegramClients[botID]
