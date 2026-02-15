@@ -81,6 +81,21 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 
 	s.deleteTechMessageIfNeeded(ctx, botID, chatID, requestID)
 
+	// Получаем пользователя для проверки onboarding_count
+	user, err := s.UserRepo.GetByChatID(ctx, chatID)
+	if err != nil {
+		s.Log.Warn("failed to get user by chat_id for keyboard check",
+			"error", err,
+			"chat_id", chatID,
+			"request_id", requestID,
+		)
+		// Продолжаем без клавиатуры, если не удалось получить пользователя
+		user = nil
+	}
+
+	// Проверяем, нужно ли добавлять клавиатуру (только после онбординга)
+	shouldAddKeyboard := user != nil && user.OnboardingCount >= 3
+
 	// Отправляем сообщение с bot_id и chat_id из Kafka (без SELECT User)
 	// Если сообщение длиннее maxMessageLength, разбиваем на части
 	var firstMessageID int64
@@ -88,7 +103,13 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 
 	if len([]rune(responseText)) <= maxMessageLength {
 		// Короткое сообщение - отправляем как есть с HTML форматированием
-		messageID, err := s.TelegramService.SendMessageWithIDAndHTML(ctx, botID, chatID, responseText)
+		var messageID int64
+		if shouldAddKeyboard {
+			keyboard := s.buildRAGResponseKeyboard(user.ID)
+			messageID, err = s.TelegramService.SendMessageWithIDAndHTMLAndKeyboard(ctx, botID, chatID, responseText, keyboard)
+		} else {
+			messageID, err = s.TelegramService.SendMessageWithIDAndHTML(ctx, botID, chatID, responseText)
+		}
 		if err != nil {
 			statusStage = domain.StageSendTelegram
 			statusErrorCode = "TELEGRAM_SEND_ERROR"
@@ -128,7 +149,16 @@ func (s *Service) HandleRAGResponse(ctx context.Context, requestID uuid.UUID, bo
 				}
 			}
 
-			messageID, err := s.TelegramService.SendMessageWithIDAndHTML(ctx, botID, chatID, part)
+			// Клавиатуру добавляем только к последнему сообщению
+			isLastPart := i == len(parts)-1
+			var messageID int64
+			if isLastPart && shouldAddKeyboard {
+				keyboard := s.buildRAGResponseKeyboard(user.ID)
+				messageID, err = s.TelegramService.SendMessageWithIDAndHTMLAndKeyboard(ctx, botID, chatID, part, keyboard)
+			} else {
+				messageID, err = s.TelegramService.SendMessageWithIDAndHTML(ctx, botID, chatID, part)
+			}
+
 			if err != nil {
 				statusStage = domain.StageSendTelegram
 				statusErrorCode = "TELEGRAM_SEND_ERROR"
@@ -260,4 +290,26 @@ func findWordBreak(runes []rune, start, end int) int {
 	}
 
 	return bestBreak
+}
+
+// buildRAGResponseKeyboard создаёт клавиатуру с 3 кнопками для ответов после онбординга
+func (s *Service) buildRAGResponseKeyboard(userID uuid.UUID) map[string]interface{} {
+	return map[string]interface{}{
+		"inline_keyboard": [][]map[string]interface{}{
+			{
+				{
+					"text":          "Особые возможности",
+					"callback_data": fmt.Sprintf("button_special:%s", userID.String()),
+				},
+				{
+					"text":          "Расскажи обо мне",
+					"callback_data": fmt.Sprintf("button_summarize:%s", userID.String()),
+				},
+				{
+					"text":          "Раскрой тему глубже",
+					"callback_data": fmt.Sprintf("button_more:%s", userID.String()),
+				},
+			},
+		},
+	}
 }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/IBM/sarama"
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
+	kafkaPorts "github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/google/uuid"
 )
 
@@ -61,6 +62,11 @@ func NewProducer(cfg *Config, log *slog.Logger) (*Producer, error) {
 // SendRAGRequest отправляет запрос в RAG и возвращает partition и offset
 // В value передаётся request_text и натальный отчёт (raw JSON без экранирования), остальные поля - в headers
 func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, requestText string, natalReport domain.NatalReport, requestType domain.RequestType) (int32, int64, error) {
+	return p.SendRAGRequestWithOptions(ctx, requestID, botID, chatID, requestText, natalReport, requestType, nil)
+}
+
+// SendRAGRequestWithOptions отправляет запрос в RAG с дополнительными опциями
+func (p *Producer) SendRAGRequestWithOptions(ctx context.Context, requestID uuid.UUID, botID domain.BotId, chatID int64, requestText string, natalReport domain.NatalReport, requestType domain.RequestType, options *kafkaPorts.RAGRequestOptions) (int32, int64, error) {
 	var natalReportRaw json.RawMessage
 	if len(natalReport) > 0 {
 		if !json.Valid(natalReport) {
@@ -69,10 +75,15 @@ func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botI
 		natalReportRaw = json.RawMessage(natalReport)
 	}
 
+	// Формируем value с новыми полями
 	valueData := map[string]interface{}{
+		"request_id":  requestID.String(),
+		"bot_id":      string(botID),
+		"chat_id":     chatID,
 		"request_text": requestText,
-		"natal_chart":  natalReportRaw,
+		"natal_chart": natalReportRaw,
 	}
+
 	valueBytes, err := json.Marshal(valueData)
 	if err != nil {
 		return 0, 0, fmt.Errorf("failed to marshal value: %w", err)
@@ -80,24 +91,37 @@ func (p *Producer) SendRAGRequest(ctx context.Context, requestID uuid.UUID, botI
 
 	headers := []sarama.RecordHeader{
 		{
-			Key:   []byte("request_id"),
-			Value: []byte(requestID.String()),
-		},
-		{
-			Key:   []byte("bot_id"),
-			Value: []byte(string(botID)),
-		},
-		{
-			Key:   []byte("chat_id"),
-			Value: []byte(fmt.Sprintf("%d", chatID)),
+			Key:   []byte("action"),
+			Value: []byte(requestType.KafkaAction()),
 		},
 	}
 
-	if action := requestType.KafkaAction(); action != "" {
-		headers = append(headers, sarama.RecordHeader{
-			Key:   []byte("action"),
-			Value: []byte(action),
-		})
+	// Добавляем опциональные bool headers
+	if options != nil {
+		if options.Onboarding != nil {
+			headers = append(headers, sarama.RecordHeader{
+				Key:   []byte("onboarding"),
+				Value: []byte(fmt.Sprintf("%t", *options.Onboarding)),
+			})
+		}
+		if options.Summarize != nil {
+			headers = append(headers, sarama.RecordHeader{
+				Key:   []byte("summarize"),
+				Value: []byte(fmt.Sprintf("%t", *options.Summarize)),
+			})
+		}
+		if options.More != nil {
+			headers = append(headers, sarama.RecordHeader{
+				Key:   []byte("more"),
+				Value: []byte(fmt.Sprintf("%t", *options.More)),
+			})
+		}
+		if options.NeedPhoto != nil {
+			headers = append(headers, sarama.RecordHeader{
+				Key:   []byte("need_photo"),
+				Value: []byte(fmt.Sprintf("%t", *options.NeedPhoto)),
+			})
+		}
 	}
 
 	msg := &sarama.ProducerMessage{

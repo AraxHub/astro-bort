@@ -13,11 +13,13 @@ type IUserRepo interface {
 	Create(ctx context.Context, user *domain.User) error
 	GetByTelegramID(ctx context.Context, telegramID int64) (*domain.User, error)
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
+	GetByChatID(ctx context.Context, chatID int64) (*domain.User, error)
 	GetNatalChart(ctx context.Context, userID uuid.UUID) (domain.NatalReport, error)
 	Update(ctx context.Context, user *domain.User) error
 	UpdateProfile(ctx context.Context, user *domain.User) error
 	UpdateLastSeen(ctx context.Context, userID uuid.UUID) error
 	UpdateFreeMsgCount(ctx context.Context, userID uuid.UUID) error
+	UpdateOnboardingCount(ctx context.Context, userID uuid.UUID) error
 	SetPaidStatus(ctx context.Context, userID uuid.UUID, isPaid bool) error
 	GetUsersWithExpiredSubscriptions(ctx context.Context) ([]uuid.UUID, error)
 	RevokeExpiredSubscriptions(ctx context.Context) (int64, error)

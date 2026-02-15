@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/admin/tg-bots/astro-bot/internal/domain"
+	kafkaPorts "github.com/admin/tg-bots/astro-bot/internal/ports/kafka"
 	"github.com/admin/tg-bots/astro-bot/internal/usecases/astro/texts"
 	"github.com/google/uuid"
 )
@@ -204,6 +205,7 @@ func (s *Service) confirmResetBirthData(ctx context.Context, botID domain.BotId,
 	user.BirthDataSetAt = nil
 	user.BirthDataCanChangeUntil = nil
 	user.NatalChartFetchedAt = nil
+	user.OnboardingCount = 0 // Сбрасываем счётчик онбординга
 	user.UpdatedAt = time.Now()
 
 	if err := s.UserRepo.Update(ctx, user); err != nil {
@@ -357,18 +359,6 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 	requestID = request.ID
 	statusCreated = true
 
-	// Инкрементируем счётчик бесплатных сообщений для бесплатных пользователей
-	if !isPaidUser {
-		if err = s.UserRepo.UpdateFreeMsgCount(ctx, user.ID); err != nil {
-			s.Log.Error("failed to increment free_msg_count",
-				"error", err,
-				"user_id", user.ID,
-				"request_id", requestID,
-			)
-			// Не возвращаем ошибку - продолжаем обработку запроса
-		}
-	}
-
 	// lazy loading - отчёт достаём ток перед отправкой в кафку
 	natalReport, err := s.UserRepo.GetNatalChart(ctx, user.ID)
 	if err != nil {
@@ -386,11 +376,64 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 		return originalErr
 	}
 
+	// Определяем опции для отправки в Kafka на основе onboarding_count
+	var kafkaOptions *kafkaPorts.RAGRequestOptions
+	onboardingActive := user.OnboardingCount < 2
+	onboardingSummarize := user.OnboardingCount == 2
+
+	if onboardingActive {
+		// Активный онбординг (< 2)
+		onboardingTrue := true
+		summarizeFalse := false
+		moreFalse := false
+		needPhotoFalse := false
+		kafkaOptions = &kafkaPorts.RAGRequestOptions{
+			Onboarding: &onboardingTrue,
+			Summarize:  &summarizeFalse,
+			More:       &moreFalse,
+			NeedPhoto:  &needPhotoFalse,
+		}
+		s.Log.Info("onboarding active",
+			"user_id", user.ID,
+			"request_id", requestID,
+			"onboarding_count", user.OnboardingCount,
+		)
+	} else if onboardingSummarize {
+		// Переходный момент (== 2) - summarize
+		onboardingFalse := false
+		summarizeTrue := true
+		moreFalse := false
+		needPhotoFalse := false
+		kafkaOptions = &kafkaPorts.RAGRequestOptions{
+			Onboarding: &onboardingFalse,
+			Summarize:  &summarizeTrue,
+			More:       &moreFalse,
+			NeedPhoto:  &needPhotoFalse,
+		}
+		s.Log.Info("onboarding summarize transition",
+			"user_id", user.ID,
+			"request_id", requestID,
+			"onboarding_count", user.OnboardingCount,
+		)
+	} else {
+		// Стандартный флоу (>= 3)
+		onboardingFalse := false
+		summarizeFalse := false
+		moreFalse := false
+		needPhotoTrue := true
+		kafkaOptions = &kafkaPorts.RAGRequestOptions{
+			Onboarding: &onboardingFalse,
+			Summarize:  &summarizeFalse,
+			More:       &moreFalse,
+			NeedPhoto:  &needPhotoTrue,
+		}
+	}
+
 	if s.KafkaProducer != nil {
 		// Сохраняем request_id как последний для этого чата
 		s.setLastRequestID(user.TelegramChatID, request.ID)
 
-		partition, offset, err := s.KafkaProducer.SendRAGRequest(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport, request.RequestType)
+		partition, offset, err := s.KafkaProducer.SendRAGRequestWithOptions(ctx, request.ID, request.BotID, user.TelegramChatID, request.RequestText, natalReport, request.RequestType, kafkaOptions)
 		if err != nil {
 			statusStage = domain.StageKafkaSend
 			statusErrorCode = "KAFKA_SEND_ERROR"
@@ -411,7 +454,48 @@ func (s *Service) handleUserQuestion(ctx context.Context, botID domain.BotId, us
 			return originalErr
 		}
 
-		// успех отправки
+		// успех отправки - инкрементируем счётчики
+		if onboardingActive || onboardingSummarize {
+			// Инкрементируем onboarding_count (не тратим free_msg_count)
+			if err = s.UserRepo.UpdateOnboardingCount(ctx, user.ID); err != nil {
+				s.Log.Error("failed to increment onboarding_count",
+					"error", err,
+					"user_id", user.ID,
+					"request_id", requestID,
+				)
+				// Не возвращаем ошибку - сообщение уже отправлено в Kafka
+			} else {
+				newCount := user.OnboardingCount + 1
+				if onboardingSummarize {
+					s.Log.Info("onboarding completed, transitioned to standard flow",
+						"user_id", user.ID,
+						"request_id", requestID,
+						"old_onboarding_count", user.OnboardingCount,
+						"new_onboarding_count", newCount,
+					)
+				} else {
+					s.Log.Info("onboarding count incremented",
+						"user_id", user.ID,
+						"request_id", requestID,
+						"old_onboarding_count", user.OnboardingCount,
+						"new_onboarding_count", newCount,
+					)
+				}
+			}
+		} else {
+			// Стандартный флоу - инкрементируем free_msg_count для бесплатных пользователей
+			if !isPaidUser {
+				if err = s.UserRepo.UpdateFreeMsgCount(ctx, user.ID); err != nil {
+					s.Log.Error("failed to increment free_msg_count",
+						"error", err,
+						"user_id", user.ID,
+						"request_id", requestID,
+					)
+					// Не возвращаем ошибку - продолжаем обработку запроса
+				}
+			}
+		}
+
 		statusMetadata = domain.BuildKafkaMetadata(
 			"requests",
 			partition,
