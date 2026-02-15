@@ -75,13 +75,10 @@ func (p *Producer) SendRAGRequestWithOptions(ctx context.Context, requestID uuid
 		natalReportRaw = json.RawMessage(natalReport)
 	}
 
-	// Формируем value с новыми полями
+	// Формируем value (как раньше - только request_text и natal_chart)
 	valueData := map[string]interface{}{
-		"request_id":  requestID.String(),
-		"bot_id":      string(botID),
-		"chat_id":     chatID,
 		"request_text": requestText,
-		"natal_chart": natalReportRaw,
+		"natal_chart":   natalReportRaw,
 	}
 
 	valueBytes, err := json.Marshal(valueData)
@@ -90,6 +87,18 @@ func (p *Producer) SendRAGRequestWithOptions(ctx context.Context, requestID uuid
 	}
 
 	headers := []sarama.RecordHeader{
+		{
+			Key:   []byte("request_id"),
+			Value: []byte(requestID.String()),
+		},
+		{
+			Key:   []byte("bot_id"),
+			Value: []byte(string(botID)),
+		},
+		{
+			Key:   []byte("chat_id"),
+			Value: []byte(fmt.Sprintf("%d", chatID)),
+		},
 		{
 			Key:   []byte("action"),
 			Value: []byte(requestType.KafkaAction()),
