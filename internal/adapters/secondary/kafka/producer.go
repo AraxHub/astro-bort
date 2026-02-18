@@ -78,7 +78,7 @@ func (p *Producer) SendRAGRequestWithOptions(ctx context.Context, requestID uuid
 	// Формируем value (как раньше - только request_text и natal_chart)
 	valueData := map[string]interface{}{
 		"request_text": requestText,
-		"natal_chart":   natalReportRaw,
+		"natal_chart":  natalReportRaw,
 	}
 
 	valueBytes, err := json.Marshal(valueData)

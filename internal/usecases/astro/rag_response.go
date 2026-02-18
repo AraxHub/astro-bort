@@ -298,15 +298,17 @@ func (s *Service) buildRAGResponseKeyboard(userID uuid.UUID) map[string]interfac
 		"inline_keyboard": [][]map[string]interface{}{
 			{
 				{
-					"text":          "Особые возможности",
+					"text":          "🌟 Особые анализы",
 					"callback_data": fmt.Sprintf("button_special:%s", userID.String()),
 				},
+			},
+			{
 				{
-					"text":          "Расскажи обо мне",
+					"text":          "👩🏻‍🎨 Портрет личности",
 					"callback_data": fmt.Sprintf("button_summarize:%s", userID.String()),
 				},
 				{
-					"text":          "Раскрой тему глубже",
+					"text":          "Глубже ➡️",
 					"callback_data": fmt.Sprintf("button_more:%s", userID.String()),
 				},
 			},
